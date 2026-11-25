@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Maritime Museum - live 360 viewer</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;font:13px system-ui,sans-serif;color:#fff}canvas{width:100vw;height:100vh;display:block;cursor:grab;touch-action:none}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:8px 12px;flex-wrap:wrap;background:linear-gradient(transparent,#000a);display:flex;gap:10px;align-items:center}
+#bar input[type=range]{flex:1}button{background:#1d4a6b;color:#fff;border:0;border-radius:4px;padding:5px 10px;cursor:pointer}#hint{position:fixed;top:8px;left:12px;opacity:.7}</style>
+<canvas id="c"></canvas><div id="hint">Drag = look around - wheel / pinch = zoom - gyro button = move phone to look - WASD = walk (desktop)</div>
+<div id="bar"><button id="pl">Pause</button><button id="gy" style="display:none">Gyro: off</button><input id="sl" type="range" min="0" max="75" step="0.01" value="0"><span id="tt">0.0 s</span>
+<label>speed <select id="sp"><option>0.5</option><option selected>1</option><option>2</option></select></label><label><input type="checkbox" id="fl" checked> follow tour view direction</label></div>
+<script src="config.js"></script><script src="content.js"></script><script src="engine.js"></script>
+<script>
+/* Offline live viewer: same scene + same camera path as the rendered video. No network needed (open via file://). */
+const cv = document.getElementById('c'), R = new Museum.Renderer(cv, { antialias: true }), V = CONFIG.video;
+const sl = document.getElementById('sl'), tt = document.getElementById('tt'), pl = document.getElementById('pl'); sl.max = V.duration;
+let t = 0, playing = true, last = performance.now(), look = { yaw: 0, pitch: 0 }, fov = 85, free = null, keys = {};
+function size() { const d = Math.min(devicePixelRatio, 1.5); cv.width = innerWidth * d; cv.height = innerHeight * d; } addEventListener('resize', size); size();
+let drag = null; cv.onmousedown = e => { drag = [e.clientX, e.clientY]; cv.style.cursor = 'grabbing'; }; addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
+addEventListener('mousemove', e => { if (!drag) return; const k = fov / innerHeight; look.yaw -= (e.clientX - drag[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (e.clientY - drag[1]) * k)); drag = [e.clientX, e.clientY]; });
+cv.addEventListener('wheel', e => { fov = Math.max(30, Math.min(110, fov + e.deltaY * 0.05)); e.preventDefault(); }, { passive: false });
+let touch = null, pinch = 0;
+cv.ontouchstart = e => { touch = [e.touches[0].clientX, e.touches[0].clientY]; if (e.touches.length > 1) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); };
+cv.ontouchmove = e => { e.preventDefault();
+  if (e.touches.length > 1) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); fov = Math.max(30, Math.min(110, fov - (d - pinch) * 0.15)); pinch = d; return; }
+  const x = e.touches[0].clientX, y = e.touches[0].clientY, k = fov / innerHeight; look.yaw -= (x - touch[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (y - touch[1]) * k)); touch = [x, y]; };
+// ---- gyroscope (phones; needs https or file/localhost; iOS asks for permission)
+const gy = document.getElementById('gy'); let gyro = null, gyroOff = 0;
+if ('DeviceOrientationEvent' in window && /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent)) gy.style.display = '';
+function onOri(e) { if (e.alpha == null) return; const r = Math.PI / 180, a = e.alpha * r, b = e.beta * r, g = e.gamma * r;
+  const cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
+  // device -Z axis in the east/north/up world frame (Z-X'-Y'' rotation)
+  const fE = -(cA * sG + sA * sB * cG), fN = -(sA * sG - cA * sB * cG), fU = -(cB * cG);
+  gyro = { yaw: Math.atan2(-fN, fE) / r, pitch: Math.asin(Math.max(-1, Math.min(1, fU))) / r }; }
+gy.onclick = async () => {
+  if (gyro !== null || gy.dataset.on) { gy.dataset.on = ''; gyro = null; removeEventListener('deviceorientation', onOri); gy.textContent = 'Gyro: off'; return; }
+  try { if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== 'granted') return; } catch (e) { return; }
+  addEventListener('deviceorientation', onOri); gy.dataset.on = '1'; gy.textContent = 'Gyro: on'; gyroOff = null; look.yaw = 0; look.pitch = 0; };
+addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === 'r') free = null; if (e.key === ' ') pl.click(); }); addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+pl.onclick = () => { playing = !playing; pl.textContent = playing ? 'Pause' : 'Play'; }; sl.oninput = () => { t = +sl.value; };
+function frame(now) {
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now; if (playing) { t += dt * +document.getElementById('sp').value; if (t > V.duration) t = 0; } sl.value = t; tt.textContent = t.toFixed(1) + ' s';
+  const cam = R.cam(t); let p = { x: cam.x, y: cam.y, z: cam.z }, base = document.getElementById('fl').checked ? cam.yaw : 0, pit = document.getElementById('fl').checked ? cam.pitch : 0;
+  if (gyro) { if (gyroOff === null) gyroOff = base - gyro.yaw; base = gyroOff + gyro.yaw; pit = gyro.pitch; }
+  const mv = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), st = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+  if (mv || st) { if (!free) free = { x: p.x, z: p.z }; const y = (base + look.yaw) * Math.PI / 180; free.x += (Math.cos(y) * mv - Math.sin(y) * st) * dt * 2.5; free.z += (Math.sin(y) * mv + Math.cos(y) * st) * dt * 2.5; }
+  if (free) { p.x = free.x; p.z = free.z; }
+  R.renderPerspective(t, { x: p.x, y: p.y, z: p.z, yaw: base + look.yaw, pitch: pit + look.pitch, fov }); requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
