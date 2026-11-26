@@ -24,10 +24,11 @@
 
     /* ---------------- VIDEO / RENDER ---------------- */
     video: {
-      fps: 30, duration: 75,            // seconds (spec: 60-75)
+      fps: 30, duration: 90,            // seconds (spec: 60-75)
       width: 2048, height: 1024,        // equirectangular output size
       cubeSize: 1024,                   // cube-face resolution used for the conversion (higher = sharper/slower)
-      bitrateMbps: 16,                  // VP9 bitrate
+      bitrateMbps: 16,                  // VP9 bitrate of the full-quality render
+      shareMbps: 3.2,                   // bitrate of the lighter shareable render (made in the same pass)
       fadeIn: 1.2, fadeOut: 3.5,        // seconds of fade from/to black
       exposure: 1.1,
       outName: 'museum_360_preview',    // written to out/<name>.webm
@@ -49,6 +50,14 @@
       // Hall outline (plan polygon, clockwise from the top-left). The top edge is the dome's outer wall.
       hallPoly: [P(218, 205), P(218, 325), P(172, 325), P(172, 412), P(110, 412), P(110, 522), P(565, 522), P(565, 375)],
       hallDoor: { pos: P(211, 522), w: 2.2, h: 2.6 },    // entrance double door, bottom-left
+      // DOUBLE-HEIGHT VOID around the dhow (two-storey space). The 6 m ceiling slab is cut away over x0..east wall, z0..south wall; the
+      // upper floor (gallery, slab top = hallCeiling+0.3) wraps the void on the north and west sides, stairs along the east wall lead up to it.
+      void: { x0: -9.5, z0: 13.6, h: 12.0, northBack: 10.4, westBack: -11.7, eastBack: 11.5,
+        screens: [   // display screens on the upper-floor walls (zone hall)
+          { pos: [-4.8, 10.4], facing: 90, y: 9.3, w: 3.4, h: 1.9, content: 'chart', glow: [0.4, 0.8, 1.0], zone: 'hall' },
+          { pos: [4.6, 10.4], facing: 90, y: 9.3, w: 3.4, h: 1.9, content: 'waves', glow: [0.4, 0.7, 1.0], zone: 'hall' },
+          { pos: [-11.7, 18.0], facing: 0, y: 9.0, w: 3.0, h: 1.7, content: 'sunrise', glow: [1.0, 0.7, 0.4], zone: 'hall' },
+        ] },
     },
 
     /* ---------------- COLOURS (RGB 0-1 or hex strings) ---------------- */
@@ -76,7 +85,10 @@
 
     /* ---------------- HALL EXHIBITS ---------------- */
     exhibits: {
-      dhow: { pos: P(383, 433), heading: 0, platform: [10.6, 2.7], platformH: 0.25, hullLength: 10.2, beam: 2.1, mastH: 5.0 },
+      dhow: { pos: P(383, 433), heading: 0, platform: [10.6, 2.7], platformH: 0.25, hullLength: 10.2, beam: 2.1,
+        mastH: 10.0,                    // mast top = mastH above the platform floor (~10 m: rises through both floors)
+        // lateen sail in dhow-local coords: x along the hull (bow = +x), y = absolute height, billow = lee bulge in metres
+        sail: { mastX: -0.6, yardZ: 0.22, peak: [-3.3, 9.5], tack: [4.5, 3.3], clew: [-4.8, 2.9], billow: 1.0, color: '#e9d9b8' } },
       infoStand: { pos: P(408, 409), w: 1.3 },
       grate: { pos: P(396, 481), size: [8.2, 1.5] },            // striped rectangle (stairs/grate)
       skylight: { pos: P(283, 503), size: 1.6 },                // square with an X
@@ -94,13 +106,13 @@
       // potted plants: kind 'palm' (trunk + fronds) or 'bush'
       plants: [
         { pos: P(237, 308), kind: 'palm', s: 1.1 }, { pos: P(275, 275), kind: 'bush', s: 1.0 }, { pos: P(268, 268), kind: 'palm', s: 0.9 },
-        { pos: P(382, 345), kind: 'palm', s: 1.0 }, { pos: P(475, 345), kind: 'palm', s: 1.0 },
+        { pos: P(475, 345), kind: 'palm', s: 1.0 },
         { pos: P(297, 415), kind: 'bush', s: 1.0 }, { pos: P(318, 410), kind: 'bush', s: 0.9 },
         { pos: P(447, 410), kind: 'bush', s: 0.9 }, { pos: P(470, 412), kind: 'palm', s: 1.0 },
         { pos: P(305, 515), kind: 'bush', s: 0.8 }, { pos: P(340, 513), kind: 'bush', s: 0.8 },
-        { pos: P(512, 513), kind: 'bush', s: 0.8 }, { pos: P(550, 513), kind: 'palm', s: 0.9 },
+        { pos: P(512, 513), kind: 'bush', s: 0.8 }, 
         { pos: P(176, 430), kind: 'bush', s: 0.8 }, { pos: P(158, 498), kind: 'palm', s: 0.9 },
-        { pos: P(560, 430), kind: 'bush', s: 0.8 },
+        
       ],
       shellsOnMedallion: 9,
     },
@@ -120,11 +132,18 @@
        Intensities are artistic; tune by eye in viewer.html. */
     ambient: { hall: [0.14, 0.16, 0.22], dome: [0.17, 0.22, 0.34], out: [0.50, 0.58, 0.72] },
     lights: [
-      // warm spots on the big dhow (track lights above the boat)
-      { type: 'spot', zone: 'hall', pos: [-3.6, 5.7, 15.0], target: [-3.4, 0.9, 17.1], color: [1.0, 0.7, 0.38], intensity: 5.5, range: 11, cone: 46 },
-      { type: 'spot', zone: 'hall', pos: [-0.4, 5.7, 15.0], target: [-0.2, 0.9, 17.1], color: [1.0, 0.7, 0.38], intensity: 5.5, range: 11, cone: 46 },
-      { type: 'spot', zone: 'hall', pos: [3.0, 5.7, 15.0],  target: [3.2, 0.9, 17.1],  color: [1.0, 0.7, 0.38], intensity: 5.5, range: 11, cone: 46 },
-      { type: 'spot', zone: 'hall', pos: [0.2, 5.7, 20.0],  target: [0.2, 1.0, 17.3],  color: [1.0, 0.75, 0.45], intensity: 3.5, range: 11, cone: 60 },
+      // warm spots on the big dhow hull + sail, hung from the 12 m ceiling of the void (ceil = fixture height)
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.6, 11.5, 14.6], target: [-3.4, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [-0.4, 11.5, 14.6], target: [-0.2, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [3.0, 11.5, 14.6],  target: [3.2, 1.1, 17.1],  color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [0.2, 11.5, 20.6],  target: [0.2, 1.1, 17.3],  color: [1.0, 0.75, 0.45], intensity: 9, range: 18, cone: 44 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.0, 11.5, 13.9], target: [-1.2, 6.4, 17.5], color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [2.6, 11.5, 13.9],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.0, 11.5, 21.2], target: [-1.2, 6.4, 17.5], color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, pos: [2.6, 11.5, 21.2],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
+      // upper-gallery wash
+      { type: 'point', zone: 'hall', pos: [0, 10.8, 12.0], color: [1.0, 0.82, 0.6], intensity: 8, range: 12 },
+      { type: 'point', zone: 'hall', pos: [-9.5, 9.0, 18.0], color: [1.0, 0.82, 0.6], intensity: 6, range: 11 },
       // canoe niche, medallion platform, plinth, plain fill
       { type: 'spot', zone: 'hall', pos: [-9.2, 5.7, 13.0], target: [-11.3, 0.4, 13.0], color: [1.0, 0.72, 0.42], intensity: 6.0, range: 10, cone: 50 },
       { type: 'spot', zone: 'hall', pos: [-12.2, 5.7, 19.4], target: [-14.8, 0.2, 19.6], color: [1.0, 0.78, 0.5], intensity: 6.0, range: 10, cone: 50 },
@@ -181,44 +200,54 @@
       arcw(-34, 1.7, 2.8, 2.0, 'sunrise', { glow: [1.0, 0.7, 0.4] }),
       arcw(-12, 1.7, 2.8, 2.0, 'ripple', { glow: [0.4, 0.9, 0.85] }),
       // freestanding totems (two-sided)
-      { pos: P(340, 392), facing: 90, y: 1.35, w: 1.0, h: 1.8, content: 'compass', glow: [0.4, 0.75, 1.0], free: true },
+      { pos: P(340, 398), facing: 90, y: 1.35, w: 1.0, h: 1.8, content: 'compass', glow: [0.4, 0.75, 1.0], free: true },
       { pos: P(528, 402), facing: 160, y: 1.35, w: 1.0, h: 1.8, content: 'ships', glow: [1.0, 0.65, 0.35], free: true },
       { pos: P(252, 408), facing: 0, y: 1.35, w: 1.0, h: 1.8, content: 'waves', glow: [0.4, 0.7, 1.0], free: true },
     ],
 
     /* ---------------- CAMERA PATH ----------------
        Keyframes are blended with a smooth C1 (Hermite) spline: no jerks. First/last ease in/out.
-       t = seconds, pos = [x,z], rise = height above eye level (m), heading = deg or {look:[x,z]}, pitch = deg up.
+       t = seconds, pos = [x,z], rise = height above eye level (m, unused = 0), heading = deg or {look:[x,z]}, pitch = deg up.
        heading omitted -> the camera looks along its direction of travel (smoothed). */
     camera: {
-      eyeHeight: 1.6,
+      eyeHeight: 1.6,                   // constant eye height (VR comfort): no vertical camera motion
+      // Times come from tools/camgen.js (walking speed ~1.05 m/s, cap 1.3 m/s; `node tools/camgen.js check` prints the real max speed).
+      // stop:true = zero velocity at that key (ease in/out); two stop keys at the same spot = a pause. First/last key ease in/out too.
       keys: [
-        { t: 0,    pos: P(211, 568), heading: -90 },                                  // outside the bottom-left door
-        { t: 4.5,  pos: P(211, 524), heading: -90 },                                  // door threshold
-        { t: 8,    pos: P(228, 484), heading: -70 },                                  // into the hall
-        { t: 11.5, pos: P(300, 482), heading: { look: P(383, 433) } },                // approach the dhow
-        { t: 14.5, pos: P(385, 484), heading: { look: P(383, 433) } },
-        { t: 17.5, pos: P(466, 480), heading: { look: P(383, 433) } },
-        { t: 19.5, pos: P(500, 436), heading: { look: P(383, 428) } },                // round the east end
-        { t: 22,   pos: P(470, 388), heading: { look: P(383, 428) } },
-        { t: 25,   pos: P(390, 382), heading: { look: P(340, 410) } },                // back along the north side
-        { t: 28,   pos: P(300, 384), heading: -170 },
-        { t: 30.5, pos: P(247, 392), heading: { look: P(211, 372) } },                // canoe niche
-        { t: 34,   pos: P(232, 424), heading: { look: P(180, 440) } },
-        { t: 37,   pos: P(204, 454), heading: 175 },                                  // medallion + shell tables
-        { t: 39,   pos: P(214, 446), heading: { look: P(160, 466) } },
-        { t: 42, pos: P(250, 396), heading: -60 },
-        { t: 45,   pos: P(298, 374), heading: -30 },                                  // past the plinth
-        { t: 48.5, pos: P(385, 372), heading: -20 },                                  // wave bench
-        { t: 51,   pos: P(448, 362), heading: -35 },                                  // pods + curved wall
-        { t: 53,   pos: P(468, 352), heading: -50 },
-        { t: 55,   pos: P(426, 334), heading: -90 },                                  // turn toward the dome
-        { t: 57,   pos: P(380, 324), heading: -90 },
-        { t: 58.5, pos: P(374, 304), heading: -90, rise: 0 },                         // dome entrance
-        { t: 61.5, pos: P(374, 277), heading: -90, rise: 0.0 },
-        { t: 66,   pos: P(376, 236), heading: -90, rise: 0.4 },
-        { t: 71,   pos: P(379, 196), heading: -80, rise: 1.0, pitch: 12 },
-        { t: 75,   pos: P(380, 176), heading: -70, rise: 1.5, pitch: 22 },            // centre of the dome, looking up a little
+        { t: 0.0, pos: [-11.27, 26.3], heading: -90, pitch: 0 },   // start
+        { t: 3.8, pos: [-11.27, 23.15], heading: -90, pitch: 0 },   // door
+        { t: 6.2, pos: [-10.4, 21], heading: -40, pitch: 0 },   // in
+        { t: 9.8, pos: [-6.9, 20.4], heading: { look: [0.2,17.45] }, pitch: 6 },   // SW
+        { t: 12.5, pos: [-6.9, 17.8], heading: { look: [0.2,17.45] }, pitch: 8 },   // W1
+        { t: 14.8, pos: [-6.7, 15.4], heading: { look: [0.2,17.45] }, pitch: 9 },   // W2
+        { t: 16.8, pos: [-4.9, 14.3], heading: { look: [0.2,17.45] }, pitch: 10 },   // NW
+        { t: 20.0, pos: [-1.6, 14.3], heading: { look: [0.2,17.45] }, pitch: 12 },   // N1
+        { t: 23.6, pos: [2.2, 14.3], heading: { look: [0.2,17.45] }, pitch: 12 },   // N2
+        { t: 26.3, pos: [5, 14.5], heading: { look: [0.2,17.45] }, pitch: 12 },   // N3
+        { t: 28.7, pos: [7.2, 15.9], heading: { look: [0.2,17.45] }, pitch: 12 },   // NE
+        { t: 30.8, pos: [7.9, 17.9], heading: { look: [0.2,17.45] }, pitch: 12 },   // E1
+        { t: 32.9, pos: [7, 20], heading: { look: [0.2,17.45] }, pitch: 12 },   // SE
+        { t: 35.9, pos: [4, 20.95], heading: { look: [0.2,17.45] }, pitch: 14 },   // S1
+        { t: 39.5, pos: [1, 20.95], heading: -90, pitch: 22, stop: true },   // S2
+        { t: 44.5, pos: [1, 20.95], heading: -90, pitch: 26, stop: true },   // S2b
+        { t: 48.5, pos: [-2.4, 20.95], heading: { look: [0.2,17.45] }, pitch: 14 },   // S3
+        { t: 52.0, pos: [-6, 20.7], heading: 180, pitch: 6 },   // SWb
+        { t: 56.3, pos: [-10.3, 19.3], heading: { look: [-14.7,19.6] }, pitch: 4 },   // M1
+        { t: 57.4, pos: [-10.3, 18.7], heading: { look: [-14.7,19.6] }, pitch: 4, stop: true },   // M2
+        { t: 59.4, pos: [-10.3, 18.7], heading: { look: [-15.5,21] }, pitch: 4, stop: true },   // M2b
+        { t: 63.1, pos: [-8, 17.4], heading: -100, pitch: 0 },   // T1
+        { t: 65.2, pos: [-7.5, 15.3], heading: { look: [-11.3,13.1] }, pitch: 0 },   // T2
+        { t: 67.4, pos: [-8.2, 13.6], heading: { look: [-11.3,13.1] }, pitch: 0, stop: true },   // C1
+        { t: 69.9, pos: [-8.2, 13.6], heading: { look: [-11.6,12.4] }, pitch: 0, stop: true },   // C1b
+        { t: 73.0, pos: [-6, 14.3], heading: -20, pitch: 0 },   // X1
+        { t: 75.7, pos: [-3.2, 14.4], heading: -10, pitch: 0 },   // X2
+        { t: 78.4, pos: [-0.8, 12.9], heading: -40, pitch: 0 },   // X3
+        { t: 80.6, pos: [-0.45, 10.6], heading: -90, pitch: 0 },   // X4
+        { t: 82.5, pos: [-0.45, 8.6], heading: -90, pitch: 0 },   // D0
+        { t: 84.2, pos: [-0.4, 6.8], heading: -90, pitch: 0 },   // D1
+        { t: 86.8, pos: [-0.3, 4.1], heading: -88, pitch: 4 },   // D2
+        { t: 88.9, pos: [-0.1, 1.9], heading: -80, pitch: 12 },   // D3
+        { t: 90.9, pos: [0, 0.2], heading: -70, pitch: 24 },   // D4
       ],
     },
   };

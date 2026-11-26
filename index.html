@@ -1,47 +1,87 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Maritime Museum - live 360 viewer</title>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Maritime Museum - live 360 viewer</title>
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden;font:13px system-ui,sans-serif;color:#fff}canvas{width:100vw;height:100vh;display:block;cursor:grab;touch-action:none}
-#bar{position:fixed;left:0;right:0;bottom:0;padding:8px 12px;flex-wrap:wrap;background:linear-gradient(transparent,#000a);display:flex;gap:10px;align-items:center}
-#bar input[type=range]{flex:1}button{background:#1d4a6b;color:#fff;border:0;border-radius:4px;padding:5px 10px;cursor:pointer}#hint{position:fixed;top:8px;left:12px;opacity:.7}</style>
-<canvas id="c"></canvas><div id="hint">Drag = look around - wheel / pinch = zoom - gyro button = move phone to look - WASD = walk (desktop)</div>
-<div id="bar"><button id="pl">Pause</button><button id="gy" style="display:none">Gyro: off</button><input id="sl" type="range" min="0" max="75" step="0.01" value="0"><span id="tt">0.0 s</span>
+#bar{position:fixed;left:0;right:0;bottom:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));flex-wrap:wrap;background:linear-gradient(transparent,#000a);display:flex;gap:10px;align-items:center}
+#bar input[type=range]{flex:1;min-width:120px}button{background:#1d4a6b;color:#fff;border:0;border-radius:4px;padding:6px 11px;cursor:pointer;font:inherit}#hint{position:fixed;top:8px;left:12px;right:12px;opacity:.75;transition:opacity 1s;pointer-events:none}
+#load{position:fixed;inset:0;background:#05121c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9;transition:opacity .6s}
+#load h1{font:600 20px system-ui,sans-serif;margin:0;letter-spacing:.5px}#load .bar{width:min(320px,70vw);height:6px;border-radius:3px;background:#12324a;overflow:hidden}#load .bar i{display:block;height:100%;width:0;background:#4fb4f0;transition:width .35s}#load p{margin:0;opacity:.7}
+#err{position:fixed;inset:0;background:#05121c;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:10;padding:24px;text-align:center}#err h2{margin:0;font:600 20px system-ui}#err p{max-width:460px;margin:0;opacity:.85;line-height:1.45}#err pre{max-width:90vw;white-space:pre-wrap;opacity:.5;font-size:11px;max-height:20vh;overflow:auto}
+#app{position:fixed;left:8px;right:8px;top:8px;background:#7a4b00;border:1px solid #f0b34a;border-radius:6px;padding:8px 10px;display:none;z-index:8;gap:8px;align-items:center;line-height:1.35}#app span{flex:1}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;background:#000c;padding:7px 12px;border-radius:6px;opacity:0;transition:opacity .4s;pointer-events:none}</style>
+<canvas id="c"></canvas><div id="hint"></div>
+<div id="app"><span>You are viewing this inside an app's built-in browser. If it is slow or the gyroscope does not work, open it in Chrome / Safari (menu &#8942; or share &rarr; "Open in browser").</span><button id="cp">Copy link</button><button id="ax">&#10005;</button></div>
+<div id="toast"></div>
+<div id="load"><h1>Maritime Museum</h1><div class="bar"><i id="lb"></i></div><p id="lt">Loading...</p></div>
+<div id="err"><h2>This 360 viewer needs WebGL 2</h2><p id="em">Your browser or device could not start WebGL 2. Please try an up-to-date Chrome, Edge, Firefox or Safari (iOS 15+), turn on hardware acceleration, or open the link on another device.</p><pre id="ed"></pre></div>
+<div id="bar"><button id="pl">Pause</button><button id="gy" style="display:none">Gyro: off</button><button id="qb">Quality: auto</button><input id="sl" type="range" min="0" max="90" step="0.01" value="0"><span id="tt">0.0 s</span>
 <label>speed <select id="sp"><option>0.5</option><option selected>1</option><option>2</option></select></label><label><input type="checkbox" id="fl" checked> follow tour view direction</label></div>
 <script src="config.js"></script><script src="content.js"></script><script src="engine.js"></script>
 <script>
-/* Offline live viewer: same scene + same camera path as the rendered video. No network needed (open via file://). */
-const cv = document.getElementById('c'), R = new Museum.Renderer(cv, { antialias: true }), V = CONFIG.video;
-const sl = document.getElementById('sl'), tt = document.getElementById('tt'), pl = document.getElementById('pl'); sl.max = V.duration;
-let t = 0, playing = true, last = performance.now(), look = { yaw: 0, pitch: 0 }, fov = 85, free = null, keys = {};
-function size() { const d = Math.min(devicePixelRatio, 1.5); cv.width = innerWidth * d; cv.height = innerHeight * d; } addEventListener('resize', size); size();
-let drag = null; cv.onmousedown = e => { drag = [e.clientX, e.clientY]; cv.style.cursor = 'grabbing'; }; addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
-addEventListener('mousemove', e => { if (!drag) return; const k = fov / innerHeight; look.yaw -= (e.clientX - drag[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (e.clientY - drag[1]) * k)); drag = [e.clientX, e.clientY]; });
-cv.addEventListener('wheel', e => { fov = Math.max(30, Math.min(110, fov + e.deltaY * 0.05)); e.preventDefault(); }, { passive: false });
-let touch = null, pinch = 0;
-cv.ontouchstart = e => { touch = [e.touches[0].clientX, e.touches[0].clientY]; if (e.touches.length > 1) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); };
-cv.ontouchmove = e => { e.preventDefault();
-  if (e.touches.length > 1) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); fov = Math.max(30, Math.min(110, fov - (d - pinch) * 0.15)); pinch = d; return; }
-  const x = e.touches[0].clientX, y = e.touches[0].clientY, k = fov / innerHeight; look.yaw -= (x - touch[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (y - touch[1]) * k)); touch = [x, y]; };
-// ---- gyroscope (phones; needs https or file/localhost; iOS asks for permission)
-const gy = document.getElementById('gy'); let gyro = null, gyroOff = 0;
-if ('DeviceOrientationEvent' in window && /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent)) gy.style.display = '';
-function onOri(e) { if (e.alpha == null) return; const r = Math.PI / 180, a = e.alpha * r, b = e.beta * r, g = e.gamma * r;
-  const cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
-  // device -Z axis in the east/north/up world frame (Z-X'-Y'' rotation)
-  const fE = -(cA * sG + sA * sB * cG), fN = -(sA * sG - cA * sB * cG), fU = -(cB * cG);
-  gyro = { yaw: Math.atan2(-fN, fE) / r, pitch: Math.asin(Math.max(-1, Math.min(1, fU))) / r }; }
-gy.onclick = async () => {
-  if (gyro !== null || gy.dataset.on) { gy.dataset.on = ''; gyro = null; removeEventListener('deviceorientation', onOri); gy.textContent = 'Gyro: off'; return; }
-  try { if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== 'granted') return; } catch (e) { return; }
-  addEventListener('deviceorientation', onOri); gy.dataset.on = '1'; gy.textContent = 'Gyro: on'; gyroOff = null; look.yaw = 0; look.pitch = 0; };
-addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === 'r') free = null; if (e.key === ' ') pl.click(); }); addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-pl.onclick = () => { playing = !playing; pl.textContent = playing ? 'Pause' : 'Play'; }; sl.oninput = () => { t = +sl.value; };
-function frame(now) {
-  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000)); last = now; if (playing) { t += dt * +document.getElementById('sp').value; if (t > V.duration) t = 0; } sl.value = t; tt.textContent = t.toFixed(1) + ' s';
-  const cam = R.cam(t); let p = { x: cam.x, y: cam.y, z: cam.z }, base = document.getElementById('fl').checked ? cam.yaw : 0, pit = document.getElementById('fl').checked ? cam.pitch : 0;
-  if (gyro) { if (gyroOff === null) gyroOff = base - gyro.yaw; base = gyroOff + gyro.yaw; pit = gyro.pitch; }
-  const mv = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), st = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-  if (mv || st) { if (!free) free = { x: p.x, z: p.z }; const y = (base + look.yaw) * Math.PI / 180; free.x += (Math.cos(y) * mv - Math.sin(y) * st) * dt * 2.5; free.z += (Math.sin(y) * mv + Math.cos(y) * st) * dt * 2.5; }
-  if (free) { p.x = free.x; p.z = free.z; }
-  R.renderPerspective(t, { x: p.x, y: p.y, z: p.z, yaw: base + look.yaw, pitch: pit + look.pitch, fov }); requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+/* Offline live viewer: same scene + same camera path as the rendered video. No network needed (works from file:// or any static host).
+   Phone support: touch-drag, pinch zoom, gyroscope button, automatic low-quality mode, in-app-browser notice, WebGL2 error screen. */
+const $ = id => document.getElementById(id), ua = navigator.userAgent, mobile = /Android|iPhone|iPad|iPod|Mobi/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+const inApp = /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|WeChat|Snapchat|TikTok|musical_ly|Twitter|LinkedInApp|Pinterest|; wv\)/i.test(ua);
+const Q = new URLSearchParams(location.search), forced = Q.get('q');            // ?q=low or ?q=high overrides the automatic choice
+let lowQ = forced ? forced === 'low' : (mobile || (navigator.deviceMemory && navigator.deviceMemory <= 4)), qMode = forced || 'auto';
+const stage = (p, t) => { $('lb').style.width = p + '%'; $('lt').textContent = t; }, tick = () => new Promise(r => { requestAnimationFrame(() => setTimeout(r, 0)); setTimeout(r, 60); });   // paint the progress bar (timer fallback if rAF is throttled)
+function fail(msg, detail) { $('load').style.display = 'none'; $('err').style.display = 'flex'; if (msg) $('em').textContent = msg; $('ed').textContent = detail || ''; }
+function toast(t) { const e = $('toast'); e.textContent = t; e.style.opacity = 1; clearTimeout(toast.h); toast.h = setTimeout(() => e.style.opacity = 0, 3500); }
+if (inApp) { $('app').style.display = 'flex'; $('ax').onclick = () => $('app').style.display = 'none'; $('cp').onclick = () => { (navigator.clipboard ? navigator.clipboard.writeText(location.href) : Promise.reject()).then(() => toast('Link copied'), () => prompt('Copy this link:', location.href)); }; }
+$('hint').textContent = mobile ? 'Drag = look around - pinch = zoom - Gyro button = move your phone to look' : 'Drag = look around - wheel = zoom - WASD = walk - R = back to the tour - Space = pause';
+setTimeout(() => $('hint').style.opacity = 0, 9000);
+
+(async function main() {
+  let R, V = CONFIG.video;
+  try {
+    stage(8, 'Checking your browser...'); await tick();
+    if (!document.createElement('canvas').getContext('webgl2')) return fail();
+    stage(25, 'Building the museum...'); await tick();
+    const scene = Museum.buildScene();
+    stage(65, 'Compiling shaders and textures...'); await tick();
+    R = new Museum.Renderer($('c'), { antialias: !lowQ, lowQ, scene });
+  } catch (e) { return fail('Something went wrong while starting the 3D view. Try reloading, or use another browser.', String(e && e.message || e).slice(0, 600)); }
+  stage(100, 'Ready'); $('load').style.opacity = 0; setTimeout(() => $('load').style.display = 'none', 700);
+  R.canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); fail('The graphics context was lost (the device ran out of graphics memory). Please reload the page.'); });
+
+  const cv = $('c'), sl = $('sl'), tt = $('tt'), pl = $('pl'); sl.max = V.duration;
+  let t = 0, playing = true, last = performance.now(), look = { yaw: 0, pitch: 0 }, fov = mobile ? 80 : 85, free = null, keys = {}, slow = 0;
+  const dpr = () => lowQ ? Math.min(devicePixelRatio, 1) * (mobile ? 0.85 : 1) : Math.min(devicePixelRatio, mobile ? 1.5 : 2);
+  function size() { const d = dpr(); cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d); } addEventListener('resize', size); size();
+  function setQ(low, label) { lowQ = low; R.setLowQ(low); size(); $('qb').textContent = 'Quality: ' + (label || (low ? 'low' : 'high')); }
+  setQ(lowQ, qMode === 'auto' ? 'auto (' + (lowQ ? 'low' : 'high') + ')' : qMode);
+  $('qb').onclick = () => { qMode = qMode === 'low' ? 'high' : 'low'; slow = 0; setQ(qMode === 'low', qMode); toast(qMode === 'low' ? 'Low quality: smoother on slow devices' : 'High quality'); };
+
+  let drag = null; cv.onmousedown = e => { drag = [e.clientX, e.clientY]; cv.style.cursor = 'grabbing'; }; addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
+  addEventListener('mousemove', e => { if (!drag) return; const k = fov / innerHeight; look.yaw -= (e.clientX - drag[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (e.clientY - drag[1]) * k)); drag = [e.clientX, e.clientY]; });
+  cv.addEventListener('wheel', e => { fov = Math.max(30, Math.min(110, fov + e.deltaY * 0.05)); e.preventDefault(); }, { passive: false });
+  let touch = null, pinch = 0;
+  cv.ontouchstart = e => { $('hint').style.opacity = 0; touch = [e.touches[0].clientX, e.touches[0].clientY]; if (e.touches.length > 1) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); };
+  cv.ontouchmove = e => { e.preventDefault();
+    if (e.touches.length > 1) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); fov = Math.max(30, Math.min(110, fov - (d - pinch) * 0.15)); pinch = d; return; }
+    const x = e.touches[0].clientX, y = e.touches[0].clientY, k = fov / innerHeight; look.yaw -= (x - touch[0]) * k; look.pitch = Math.max(-89, Math.min(89, look.pitch + (y - touch[1]) * k)); touch = [x, y]; };
+  // ---- gyroscope (phones; needs https or localhost; iOS asks for permission)
+  const gy = $('gy'); let gyro = null, gyroOff = 0;
+  if ('DeviceOrientationEvent' in window && mobile) gy.style.display = '';
+  function onOri(e) { if (e.alpha == null) return; const r = Math.PI / 180, a = e.alpha * r, b = e.beta * r, g = e.gamma * r;
+    const cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
+    const fE = -(cA * sG + sA * sB * cG), fN = -(sA * sG - cA * sB * cG), fU = -(cB * cG);   // device -Z axis in the east/north/up world frame
+    gyro = { yaw: Math.atan2(-fN, fE) / r, pitch: Math.asin(Math.max(-1, Math.min(1, fU))) / r }; }
+  gy.onclick = async () => {
+    if (gyro !== null || gy.dataset.on) { gy.dataset.on = ''; gyro = null; removeEventListener('deviceorientation', onOri); gy.textContent = 'Gyro: off'; return; }
+    try { if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== 'granted') return; } catch (e) { return; }
+    addEventListener('deviceorientation', onOri); gy.dataset.on = '1'; gy.textContent = 'Gyro: on'; gyroOff = null; look.yaw = 0; look.pitch = 0; };
+  addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key.toLowerCase() === 'r') free = null; if (e.key === ' ') { pl.click(); e.preventDefault(); } }); addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+  pl.onclick = () => { playing = !playing; pl.textContent = playing ? 'Pause' : 'Play'; }; sl.oninput = () => { t = +sl.value; };
+  function frame(now) {
+    const raw = (now - last) / 1000, dt = Math.max(0, Math.min(0.1, raw)); last = now;
+    if (qMode === 'auto' && !lowQ && !document.hidden) { slow = raw > 0.05 ? slow + 1 : Math.max(0, slow - 1); if (slow > 70) { setQ(true, 'auto (low)'); toast('Switched to low quality for smoother playback'); } }
+    if (playing) { t += dt * +$('sp').value; if (t > V.duration) t = 0; } sl.value = t; tt.textContent = t.toFixed(1) + ' s';
+    const cam = R.cam(t); let p = { x: cam.x, y: cam.y, z: cam.z }, follow = $('fl').checked, base = follow ? cam.yaw : 0, pit = follow ? cam.pitch : 0;
+    if (gyro) { if (gyroOff === null) gyroOff = base - gyro.yaw; base = gyroOff + gyro.yaw; pit = gyro.pitch; }
+    const mv = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), st = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+    if (mv || st) { if (!free) free = { x: p.x, z: p.z }; const y = (base + look.yaw) * Math.PI / 180; free.x += (Math.cos(y) * mv - Math.sin(y) * st) * dt * 2.5; free.z += (Math.sin(y) * mv + Math.cos(y) * st) * dt * 2.5; }
+    if (free) { p.x = free.x; p.z = free.z; }
+    R.renderPerspective(t, { x: p.x, y: p.y, z: p.z, yaw: base + look.yaw, pitch: pit + look.pitch, fov }); requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
 </script>

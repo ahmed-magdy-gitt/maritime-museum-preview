@@ -7,7 +7,7 @@
   const C = window.CONFIG, A = C.arch, COL = C.colors, D2R = Math.PI / 180, TAU = Math.PI * 2;
   const hex = c => { if (Array.isArray(c)) return c; const n = parseInt(c.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
   const ZONES = { hall: 0, dome: 1, out: 2, ring: 3 };
-  const M = { plain: 0, stone: 1, wood: 2, sand: 3, fabric: 4, plaster: 5, screen: 6, dome: 7, glass: 8, shell: 9, frond: 10, emis: 11, black: 12, stripes: 13, sea: 14, glow: 16, leaf: 17, decal: 18, sky: 19, metal: 20 };
+  const M = { plain: 0, stone: 1, wood: 2, sand: 3, fabric: 4, plaster: 5, screen: 6, dome: 7, glass: 8, shell: 9, frond: 10, emis: 11, black: 12, stripes: 13, sea: 14, glow: 16, leaf: 17, decal: 18, sky: 19, metal: 20, sail: 21 };
   let seedState = 12345; const rnd = () => { seedState = (seedState * 1664525 + 1013904223) >>> 0; return seedState / 4294967296; };
 
   /* ---------- tiny matrix helpers (column-major 4x4) ---------- */
@@ -135,17 +135,39 @@
     B.surf((u, v) => sec(u, (v - 0.5) * 2, o.thick), 40, 16, { mat: M.wood, uvFn: (u, v, pp) => [pp[0], (v - 0.5) * 2 * 1.2], col: o.woodDark });
     // rim (gunwale) as thin tube following the sheer line
     for (const sgn of [-1, 1]) { let prev = null; for (let i = 0; i <= 30; i++) { const t = i / 30, q = sec(t, sgn, 0); if (prev) B.tube(prev, q, 0.045, { mat: M.plain, col: o.woodDark }, 6); prev = q; } }
+    const dk = { mat: M.plain, col: o.woodDark, ao: false };
+    // plank seams (strakes) + a heavier wale along the outside of the hull
+    for (const sgn of [-1, 1]) for (const s of (o.strakes || [])) { let prev = null; for (let i = 0; i <= 40; i++) { const q = sec(0.03 + 0.94 * i / 40, sgn * s, -0.012); if (prev) B.tube(prev, q, 0.011, dk, 4); prev = q; } }
+    if (o.wale) for (const sgn of [-1, 1]) { let prev = null; for (let i = 0; i <= 40; i++) { const q = sec(0.04 + 0.92 * i / 40, sgn * o.wale, -0.02); if (prev) B.tube(prev, q, 0.03, { mat: M.wood, col: o.wood, ao: false }, 5); prev = q; } }
+    // ribs (frames) across the inner skin
+    if (o.ribs) for (let i = 1; i < o.ribs; i++) { let prev = null; for (let j = 0; j <= 14; j++) { const q = sec(i / o.ribs, -1 + 2 * j / 14, o.thick + 0.012); if (prev) B.tube(prev, q, 0.026, { mat: M.wood, col: shade(o.wood, 0.7), ao: false }, 5); prev = q; } }
+    // projecting cross-beam ends + rib heads at the gunwale (typical dhow detail)
+    if (o.beams) for (let i = 1; i < o.beams; i++) { const t = 0.08 + 0.84 * i / o.beams, a = sec(t, -1, 0), b = sec(t, 1, 0), y = a[1] - 0.3; B.tube([a[0], y, a[2] - 0.22], [b[0], y, b[2] + 0.22], 0.045, { mat: M.wood, col: o.woodDark, ao: false }, 6); B.tube([a[0], a[1] - 0.02, a[2]], [a[0], a[1] + 0.13, a[2]], 0.03, dk, 5); B.tube([b[0], b[1] - 0.02, b[2]], [b[0], b[1] + 0.13, b[2]], 0.03, dk, 5); }
+    // dugout: flat lip joining outer and inner skin (thick log walls)
+    if (o.dugout) for (const sgn of [-1, 1]) B.surf((u, v) => { const a = sec(0.02 + 0.96 * u, sgn, 0), b = sec(0.02 + 0.96 * u, sgn, o.thick); return [a[0] + (b[0] - a[0]) * v, a[1] + (b[1] - a[1]) * v + 0.004, a[2] + (b[2] - a[2]) * v]; }, 50, 1, { mat: M.wood, col: o.lip || o.wood, uvFn: (u, v, pp) => [pp[0], v * 0.3], ao: false });
     return { sec, half, sheer, keel };
   }
 
   /* ---------- shells ---------- */
-  function shell(B, x, y, z, size, yaw, tilt, col, turns) {
-    turns = turns || 3.2; const k = 0.14, G = Math.exp(k * turns * TAU), sc = size / (1.55 * G);
-    B.push(); B.tr(x, y, z); B.rotY(yaw); B.rotZ(tilt); B.sc(sc);
-    B.surf((u, v) => { const s = u * turns * TAU, g = Math.exp(k * s), a = v * TAU, R = 0.5 * g, r = 0.3 * g, cy = -0.4 * (g - 1);
-      return [R * Math.cos(s) + r * Math.cos(a) * Math.cos(s), cy + r * Math.sin(a), R * Math.sin(s) + r * Math.cos(a) * Math.sin(s)]; }, 70, 12,
-      { mat: M.shell, col, uvFn: (u, v) => [u * 40, v * 6], ao: false });
-    B.pop(); B.footprint([[x - size * 0.4, 0, z - size * 0.4], [x + size * 0.4, 0, z - size * 0.4], [x + size * 0.4, 0, z + size * 0.4], [x - size * 0.4, 0, z + size * 0.4]], 0.3, 0.0);
+  function shell(B, x, y, z, size, yaw, tilt, col, turns, kind) {
+    kind = kind || 'turban'; const fp = () => B.footprint([[x - size * 0.4, 0, z - size * 0.4], [x + size * 0.4, 0, z - size * 0.4], [x + size * 0.4, 0, z + size * 0.4], [x - size * 0.4, 0, z + size * 0.4]], 0.3, 0.0);
+    const O = { mat: M.shell, col, ao: false };
+    if (kind === 'turban' || kind === 'conch' || kind === 'auger') {   // logarithmic spirals with different growth / height
+      const P = { turban: [0.14, 0.4, 3.2, 0.3], conch: [0.2, 0.9, 3.0, 0.34], auger: [0.085, 1.5, 6.5, 0.26] }[kind], k = P[0], drop = P[1], tn = P[2], rr = P[3], G = Math.exp(k * tn * TAU), sc = size / (1.55 * G * (kind === 'auger' ? 0.85 : 1));
+      B.push(); B.tr(x, y, z); B.rotY(yaw); B.rotZ(tilt); B.sc(sc);
+      B.surf((u, v) => { const s = u * tn * TAU, g = Math.exp(k * s), a = v * TAU, R = 0.5 * g, r = rr * g, cy = -drop * (g - 1);
+        return [R * Math.cos(s) + r * Math.cos(a) * Math.cos(s), cy + r * Math.sin(a), R * Math.sin(s) + r * Math.cos(a) * Math.sin(s)]; }, 70, 12, Object.assign({ uvFn: (u, v) => [u * 40, v * 6] }, O));
+      B.pop(); fp(); return;
+    }
+    B.push(); B.tr(x, y, z); B.rotY(yaw); B.rotZ(tilt); B.sc(size);
+    if (kind === 'scallop') {            // ribbed fan with a small hinge
+      B.surf((u, v) => { const a = (u - 0.5) * 2.2, r = v * 0.62, rib = 0.018 * Math.sin(a * 16) * v; return [r * Math.cos(a) - 0.1, 0.12 * v * (1 - 0.5 * Math.abs(a)) * 2.2 + rib + 0.05 * v * v, r * Math.sin(a)]; }, 44, 10, Object.assign({ uvFn: (u, v) => [u * 30, v * 4] }, O));
+    } else if (kind === 'cowrie') {      // glossy egg with a slit
+      B.surf((u, v) => { const a = u * TAU, p = (v - 0.5) * Math.PI; return [0.42 * Math.sin(p), 0.2 * Math.cos(p) * Math.sin(a) + 0.14, 0.27 * Math.cos(p) * Math.cos(a)]; }, 24, 12, Object.assign({ uvFn: (u, v) => [u * 6, v * 3] }, O));
+    } else if (kind === 'star') {        // five-armed starfish
+      B.surf((u, v) => { const a = u * TAU, arm = Math.pow(Math.abs(Math.cos(a * 2.5)), 1.6), R = (0.18 + 0.52 * arm) * v; return [R * Math.cos(a), 0.1 * (1 - v) * (0.4 + 0.6 * arm) + 0.02 + 0.015 * Math.sin(a * 5) * v, R * Math.sin(a)]; }, 60, 8, Object.assign({ uvFn: (u, v) => [u * 40, v * 5] }, O));
+    }
+    B.pop(); fp();
   }
   function plant(B, x, z, kind, s) {
     const potC = hex(COL.pot), leafA = hex(COL.leaf), leafB = hex(COL.leaf2);
@@ -156,9 +178,14 @@
         return [hz, yy - Math.abs(w) * 0.25, w]; }, 14, 4, { mat, col, uvFn: (u, v) => [u * len, (v * 2 - 1)], ao: false });
       B.pop();
     };
-    if (kind === 'palm') {
-      const h = 1.9 * s, ty = 0.5 * s; B.tube([x, ty, z], [x + 0.08 * s, ty + h, z + 0.04 * s], 0.07 * s, { mat: M.plain, col: [0.36, 0.26, 0.17] }, 8);
-      for (let i = 0; i < 11; i++) frond(i * 137.5, 20 + rnd() * 30, 1.5 * s * (0.85 + 0.3 * rnd()), 0.3 * s, ty + h, M.frond, i % 2 ? leafA : leafB);
+    if (kind === 'palm') {   // curved tapering trunk with growth rings, drooping + upright fronds, coconuts
+      const h = 2.0 * s, ty = 0.5 * s, lean = (rnd() - 0.5) * 0.5, lyaw = rnd() * TAU, tp = u => [x + Math.cos(lyaw) * lean * s * u * u, ty + h * u, z + Math.sin(lyaw) * lean * s * u * u];
+      let prev = tp(0); for (let i = 1; i <= 10; i++) { const q = tp(i / 10); B.tube(prev, q, (0.085 - 0.03 * i / 10) * s, { mat: M.plain, col: i % 2 ? [0.4, 0.3, 0.2] : [0.32, 0.23, 0.15] }, 8); prev = q; }
+      const top = tp(1), fr = (yaw, elev, len, wdt, mat, col) => { B.push(); B.tr(top[0], top[1], top[2]); B.rotY(yaw);
+        B.surf((u, v) => { const d = len * u, hz = d * Math.cos(elev * D2R) + 0.04, yy = d * Math.sin(elev * D2R) - 0.95 * u * u * u * len - 0.25 * u * u * len, w = wdt * Math.sin(Math.PI * Math.pow(0.1 + 0.9 * u, 0.85)) * (v * 2 - 1);
+          return [hz, yy - Math.abs(w) * 0.45, w]; }, 18, 4, { mat, col, uvFn: (u, v) => [u * len * 2.6, (v * 2 - 1)], ao: false }); B.pop(); };
+      const nF = 15; for (let i = 0; i < nF; i++) { const k = i / nF; fr(i * 137.5 + rnd() * 18, 62 - 80 * Math.pow(k, 0.8) + rnd() * 16, s * (1.25 + 0.55 * rnd()) * (0.8 + 0.3 * Math.sin(k * 3.1)), 0.26 * s, M.frond, i % 3 ? leafA : leafB); }
+      for (let i = 0; i < 4; i++) B.cyl(top[0] + Math.cos(i * 1.7) * 0.09 * s, top[1] - 0.13 * s, top[2] + Math.sin(i * 1.7) * 0.09 * s, 0.07 * s, 0.07 * s, 0.1 * s, 8, { mat: M.plain, col: [0.25, 0.4, 0.15], top: [0.25, 0.4, 0.15], ao: false });
     } else for (let i = 0; i < 16; i++) frond(i * 137.5, 50 + rnd() * 28, 0.95 * s * (0.7 + 0.5 * rnd()), 0.16 * s, 0.5 * s, M.leaf, i % 2 ? leafA : leafB);
   }
 
@@ -205,7 +232,9 @@
     const hallArc = arcPts(ac[0], ac[1], ar, 0, -90, 6).slice(1), domeArc = arcPts(0, 0, DO, a1, a0, 4);
     const outline = [...hp, ...hallArc, ...domeArc];
     B.zone = 0; B.poly(outline, 0.0, { mat: M.stone, col: c('hallFloor') });
-    if (!(C.debug && C.debug.hideCeiling)) B.poly(outline, H, { mat: M.plaster, col: c('ceiling'), flip: true });
+    const V = A.void, zbS = hp[6][1];
+    const ceilOutline = V ? [hp[0], hp[1], hp[2], hp[3], hp[4], hp[5], [V.x0, zbS], [V.x0, V.z0], [hp[6][0], V.z0], hp[7], ...hallArc, ...domeArc] : outline;   // double-height void = a notch in the ceiling slab
+    if (!(C.debug && C.debug.hideCeiling)) B.poly(ceilOutline, H, { mat: M.plaster, col: c('ceiling'), flip: true });
     // ---- hall walls (thin boxes along every edge except the dome side), with the entrance door gap
     const area = (() => { let s = 0; for (let i = 0; i < outline.length; i++) { const a = outline[i], b = outline[(i + 1) % outline.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; })();
     const wallChain = [ringPt(a0), ...hp, ...hallArc, ringPt(a1)];
@@ -230,7 +259,7 @@
     for (let i = 0; i < domeArc.length - 1; i++) { const q = domeArc[i], r = domeArc[i + 1]; const mx = (q[0] + r[0]) / 2, mz = (q[1] + r[1]) / 2, l = Math.hypot(r[0] - q[0], r[1] - q[1]), an = Math.atan2(r[1] - q[1], r[0] - q[0]) / D2R, rl = Math.hypot(mx, mz);
       B.push(); B.tr(mx * (rl + 0.12) / rl, 0, mz * (rl + 0.12) / rl); B.rotY(an); B.box(0, H - 0.5, 0, l + 0.02, 0.08, 0.1, { mat: M.emis, col: coveCol, ao: false }); B.pop(); }
     // downlights
-    for (let x = -17; x <= 12; x += 3.2) for (let z = 3; z <= 23; z += 3.2) { if (Math.hypot(x, z) < DO + 0.6 || !inPoly([x, z], outline)) continue; B.cyl(x, H - 0.03, z, 0.14, 0.14, 0.03, 12, { bottom: true, mat: M.emis, col: [1, 0.92, 0.8], ao: false }); }
+    for (let x = -17; x <= 12; x += 3.2) for (let z = 3; z <= 23; z += 3.2) { if (Math.hypot(x, z) < DO + 0.6 || !inPoly([x, z], outline) || (V && x > V.x0 - 0.3 && z > V.z0 - 0.3)) continue; B.cyl(x, H - 0.03, z, 0.14, 0.14, 0.03, 12, { bottom: true, mat: M.emis, col: [1, 0.92, 0.8], ao: false }); }
     // door leaves (open) + frame
     const doorLeaf = (len, h, fc, gc) => { const F = { mat: M.metal, col: fc, ao: false };
       B.box(len / 2, 0, 0, len, 0.08, 0.05, F); B.box(len / 2, h - 0.08, 0, len, 0.08, 0.05, F); B.box(0.04, 0, 0, 0.08, h, 0.05, F); B.box(len - 0.04, 0, 0, 0.08, h, 0.05, F);
@@ -278,18 +307,36 @@
 
     // ---- HALL EXHIBITS
     B.zone = 0;
-    // dhow
-    { const d = E.dhow; B.push(); B.tr(d.pos[0], 0, d.pos[1]); B.rotY(d.heading);
+    // dhow (hull, mast, lateen sail, rigging)
+    { const d = E.dhow, sl = d.sail; B.push(); B.tr(d.pos[0], 0, d.pos[1]); B.rotY(d.heading);
       B.box(0, 0, 0, d.platform[0], d.platformH, d.platform[1], { mat: M.plain, col: c('platform'), top: shade(c('platform'), 1.05), aoBlur: 1.2 });
       B.box(0, d.platformH - 0.005, 0, d.platform[0] - 0.12, 0.02, d.platform[1] - 0.12, { mat: M.plain, col: shade(c('platform'), 0.88), ao: false });
-      const h = hull(B, d.hullLength, d.beam, { keel: d.platformH + 0.45, sheer: d.platformH + 1.55, bowUp: 1.15, sternUp: 0.8, keelRise: 0.55, thick: 0.07, wood: c('boatWood'), woodDark: c('boatWoodDark'), band: c('boatBand') });
+      const h = hull(B, d.hullLength, d.beam, { keel: d.platformH + 0.45, sheer: d.platformH + 1.55, bowUp: 1.15, sternUp: 0.8, keelRise: 0.55, thick: 0.07, wood: c('boatWood'), woodDark: c('boatWoodDark'), band: c('boatBand'), strakes: [0.22, 0.42, 0.62, 0.8], wale: 0.55, ribs: 22, beams: 9 });
       for (const t of [0.12, 0.3, 0.5, 0.7, 0.88]) B.box((t - 0.5) * d.hullLength, d.platformH, 0, 0.14, h.keel(t) - d.platformH, 0.5, { mat: M.wood, col: c('boatWoodDark'), ao: false });
       for (const t of [0.2, 0.32, 0.44, 0.56, 0.68, 0.8]) { const yy = h.keel(t) + 0.55, hw = h.half(t) * Math.pow(0.55 / Math.max(0.1, h.sheer(t) - h.keel(t)), 1 / 1.6); B.box((t - 0.5) * d.hullLength, yy, 0, 0.2, 0.06, hw * 2, { mat: M.wood, col: c('boatWood'), ao: false }); }
       B.box(0, h.keel(0.5) + 0.06, 0, d.hullLength * 0.7, 0.04, d.beam * 0.5, { mat: M.wood, col: shade(c('boatWood'), 0.75), ao: false });
-      const mx = -0.8; B.tube([mx, h.keel(0.4) + 0.1, 0], [mx, d.mastH + d.platformH, 0], 0.085, { mat: M.wood, col: c('boatWoodDark') }, 10);
-      const ya = [-3.6, d.platformH + 3.0, 0.25], yb = [4.1, d.platformH + 4.7, 0.25]; B.tube(ya, yb, 0.06, { mat: M.wood, col: c('boatWoodDark') }, 8);
-      B.tube([ya[0] + 0.3, ya[1] - 0.02, 0.17], [yb[0] - 0.3, yb[1] - 0.15, 0.17], 0.16, { mat: M.fabric, col: [0.9, 0.86, 0.76] }, 10);
-      const top = [mx, d.mastH + d.platformH - 0.05, 0]; B.tube(top, [d.hullLength / 2, h.sheer(1) - 0.1, 0], 0.012, { mat: M.plain, col: [0.1, 0.07, 0.05], ao: false }, 4); B.tube(top, [-d.hullLength / 2 + 0.1, h.sheer(0) - 0.1, 0], 0.012, { mat: M.plain, col: [0.1, 0.07, 0.05], ao: false }, 4);
+      const wood = { mat: M.wood, col: c('boatWoodDark') }, rope = { mat: M.plain, col: [0.2, 0.14, 0.08], ao: false }, mx = sl.mastX, topY = d.mastH + d.platformH, zy = sl.yardZ, Mt = [mx, topY, 0];
+      B.tube([mx, h.keel(0.4) + 0.1, 0], [mx, 5.5, 0], 0.12, wood, 12); B.tube([mx, 5.5, 0], Mt, 0.085, wood, 10);
+      B.cyl(mx, topY - 0.02, 0, 0.1, 0.1, 0.12, 10, { mat: M.wood, col: c('boatWoodDark'), ao: false });               // masthead cap
+      const P = sl.peak, T = sl.tack, K = sl.clew, dl = Math.hypot(P[0] - T[0], P[1] - T[1]), dx = (P[0] - T[0]) / dl, dy = (P[1] - T[1]) / dl;
+      B.tube([T[0] - dx * 0.55, T[1] - dy * 0.55, zy], [P[0] + dx * 0.45, P[1] + dy * 0.45, zy], 0.06, wood, 8);   // yard (lateen antenna)
+      B.tube([T[0] - 0.1, T[1] - 0.06, zy], [K[0], K[1] - 0.06, zy], 0.045, wood, 8);                              // boom along the foot
+      // the sail: triangle peak-tack-clew, billowed to leeward with soft folds
+      const SAIL = (u, v) => { const ex = P[0] + (T[0] - P[0]) * u, ey = P[1] + (T[1] - P[1]) * u, vv = v * 0.996, su = Math.sin(Math.PI * u);
+        const env = Math.pow(su, 0.75) * 4 * vv * (1 - vv), fold = (0.09 * Math.sin(u * 17 + vv * 2.6) * Math.sqrt(su) + 0.035 * Math.sin(u * 41 - vv * 5) + 0.02 * Math.sin(u * 9 - vv * 11)) * Math.min(1, vv * 5);
+        return [ex + (K[0] - ex) * vv, ey + (K[1] - ey) * vv, zy + sl.billow * env + fold * (0.4 + env)]; };
+      B.surf(SAIL, 60, 30, { mat: M.sail, col: hex(sl.color), uvFn: (u, v, p) => [p[0], p[1]], ao: false });
+      B.tube([P[0], P[1], zy], [K[0], K[1], zy], 0.014, rope, 4); B.tube([T[0], T[1], zy], [K[0], K[1], zy], 0.014, rope, 4);   // boltropes
+      // rigging: shrouds, stays, halyard, tack line, sheet, vang
+      const gw = (t, sg) => h.sec(t, sg, 0);
+      for (const x of [-1.9, -1.0, -0.1]) for (const sg of [-1, 1]) { const g = gw(x / d.hullLength + 0.5, sg); B.tube([mx, 7.8, sg * 0.05], [g[0], g[1] + 0.02, g[2]], 0.012, rope, 4); }
+      B.tube(Mt, [d.hullLength / 2, h.sheer(1) - 0.1, 0], 0.013, rope, 4); B.tube(Mt, [-d.hullLength / 2 + 0.1, h.sheer(0) - 0.1, 0], 0.013, rope, 4);
+      const lerp3 = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+      const hy = lerp3(T, P, 0.42), vg = lerp3(T, P, 0.72), tg = gw(0.93, 1);
+      B.tube(Mt, [hy[0], hy[1], zy], 0.014, rope, 4);
+      B.tube([T[0], T[1], zy], [tg[0] - 0.1, tg[1], 0.0], 0.014, rope, 4);
+      B.tube([K[0], K[1], zy], [-d.hullLength / 2 + 0.55, h.sheer(0.06) - 0.02, 0.0], 0.016, rope, 4);
+      B.tube([vg[0], vg[1], zy], gw(0.36, -1), 0.012, rope, 4);
       B.tube([d.hullLength / 2, h.keel(1) + 0.1, 0], [d.hullLength / 2 + 0.35, h.sheer(1) + 0.35, 0], 0.05, { mat: M.wood, col: c('boatWoodDark') }, 6);
       B.pop();
       const s = E.infoStand; B.box(s.pos[0], 0, s.pos[1], s.w, 1.4, 0.35, { mat: M.plain, col: [0.46, 0.47, 0.5] }); }
@@ -304,8 +351,11 @@
       addScreen(B, { pos: [E.infoStand.pos[0], E.infoStand.pos[1] + 0.18], facing: 90, y: 0.95, w: 1.05, h: 0.65, content: 'chart', glow: [0.4, 0.8, 1], zone: 'hall' }); }
     // canoe + niche
     { const k = E.canoe; B.box(k.pos[0], 0, k.pos[1], k.nicheSize[0], 0.12, k.nicheSize[1], { mat: M.plain, col: c('niche'), top: [0.95, 0.92, 0.85], aoBlur: 1 });
-      B.push(); B.tr(k.pos[0], 0.12, k.pos[1]); B.rotY(k.heading); hull(B, k.length, k.beam, { keel: 0.2, sheer: 0.62, bowUp: 0.25, sternUp: 0.2, keelRise: 0.2, thick: 0.07, sectionPow: 1.4, endPow: 2.6, wood: c('canoeWood'), woodDark: shade(c('canoeWood'), 0.62), band: shade(c('canoeWood'), 0.8) });
+      B.push(); B.tr(k.pos[0], 0.12, k.pos[1]); B.rotY(k.heading); hull(B, k.length, k.beam, { keel: 0.2, sheer: 0.62, bowUp: 0.25, sternUp: 0.2, keelRise: 0.2, thick: 0.11, sectionPow: 1.4, endPow: 2.6, wood: c('canoeWood'), woodDark: shade(c('canoeWood'), 0.48), band: shade(c('canoeWood'), 0.8), dugout: true, lip: shade(c('canoeWood'), 1.12), ribs: 16, strakes: [0.35, 0.7] });
       B.pop(); }
+    const SK = ['turban', 'scallop', 'conch', 'cowrie', 'star', 'auger', 'scallop', 'turban', 'cowrie', 'conch'], SC = [c('shellA'), c('shellB'), c('shellC'), hex('#f7f0e2'), hex('#cf8a68'), hex('#e9d4a6'), hex('#b9a58f'), hex('#f3c9b5')]; let shellN = 0;
+    const mixShell = (B2, x, y, z, size) => { const i = shellN++, kind = SK[i % SK.length], col = kind === 'star' ? [[0.86, 0.4, 0.2], [0.8, 0.3, 0.25], [0.9, 0.62, 0.3]][i % 3] : SC[(i * 3 + Math.floor(rnd() * SC.length)) % SC.length];
+      shell(B2, x, y, z, size * (kind === 'star' ? 1.7 : kind === 'auger' ? 1.4 : 1), rnd() * 360, kind === 'scallop' || kind === 'star' || kind === 'cowrie' ? rnd() * 22 : 60 + rnd() * 90, col, null, kind); };
     // medallion platform + shells + plants
     { const m = E.medallion, rx = m.platform[0] / 2, rz = m.platform[1] / 2;
       B.surf((u, v) => { const a = u * TAU; return [m.pos[0] + Math.cos(a) * rx * (1 - 0.04 * v), 0.16 * v, m.pos[1] + Math.sin(a) * rz * (1 - 0.04 * v)]; }, 40, 1, { mat: M.sand, col: c('sand'), uvFn: (u, v, p) => [p[0], p[2]], ao: false });
@@ -315,7 +365,7 @@
       const mp = m.medallionPos; for (let i = 0; i < 36; i++) { const a = i / 36 * TAU, b = (i + 1) / 36 * TAU; const uvp = t => [uc + Math.cos(t) * cw * fu * 0.5 * 0.985, vc + Math.sin(t) * ch * 0.5 * 0.985];
         const o = { mat: M.decal, col: [1, 1, 1], ao: false }; B.vert([mp[0], 0.172, mp[1]], [0, 1, 0], [uc, vc], o); B.vert([mp[0] + Math.cos(a) * m.radius, 0.172, mp[1] + Math.sin(a) * m.radius], [0, 1, 0], uvp(a), o); B.vert([mp[0] + Math.cos(b) * m.radius, 0.172, mp[1] + Math.sin(b) * m.radius], [0, 1, 0], uvp(b), o); }
       B.cyl(mp[0], 0.16, mp[1], m.radius + 0.04, m.radius + 0.04, 0.012, 36, { mat: M.metal, col: [0.7, 0.55, 0.3], cap: false, ao: false });
-      const cs = [c('shellA'), c('shellB'), c('shellC')]; for (let i = 0; i < E.shellsOnMedallion; i++) { const a = rnd() * TAU, rr = 1.3 + rnd() * 0.4; shell(B, m.pos[0] + Math.cos(a) * rx * rr * 0.7 * (0.6 + 0.4 * rnd()) + 0.0, 0.17, m.pos[1] + Math.sin(a) * rz * 0.8 * (0.55 + 0.4 * rnd()), 0.14 + rnd() * 0.16, rnd() * 360, 60 + rnd() * 90, cs[i % 3]); } }
+      const cs = [c('shellA'), c('shellB'), c('shellC')]; for (let i = 0; i < E.shellsOnMedallion; i++) { const a = rnd() * TAU, rr = 1.3 + rnd() * 0.4; mixShell(B, m.pos[0] + Math.cos(a) * rx * rr * 0.7 * (0.6 + 0.4 * rnd()) + 0.0, 0.17, m.pos[1] + Math.sin(a) * rz * 0.8 * (0.55 + 0.4 * rnd()), 0.14 + rnd() * 0.16); } }
     // wave bench
     { const w = E.waveBench, N = 28; for (let i = 0; i < N; i++) { const t0 = i / N, t1 = (i + 1) / N, f = t => [lerp(w.from[0], w.to[0], t), lerp(w.from[1], w.to[1], t) + w.amp * Math.sin(t * TAU * 1.5)], a = f(t0), b = f(t1), l = Math.hypot(b[0] - a[0], b[1] - a[1]);
         B.push(); B.tr((a[0] + b[0]) / 2, 0, (a[1] + b[1]) / 2); B.rotY(Math.atan2(b[1] - a[1], b[0] - a[0]) / D2R); B.box(0, 0, 0, l + 0.06, 0.42, w.width, { mat: M.plain, col: [0.86, 0.78, 0.62], top: [0.92, 0.85, 0.7], ao: i % 3 == 0 }); B.pop(); } }
@@ -331,7 +381,7 @@
       B.box(w / 2, 0.72, 0, 0.03, 0.12, d, { mat: M.metal, col: [0.7, 0.6, 0.4], ao: false }); B.box(-w / 2, 0.72, 0, 0.03, 0.12, d, { mat: M.metal, col: [0.7, 0.6, 0.4], ao: false });
       B.pass('blend'); B.box(0, 0.83, 0, w, 0.015, d, { mat: M.glass, col: [0.8, 0.92, 1], ao: false }); B.pass('opq');
       B.box(0, 0.711, 0, w * 0.96, 0.005, 0.03, { mat: M.emis, col: [1, 0.9, 0.7], ao: false });
-      const cs = [c('shellA'), c('shellB'), c('shellC')]; for (let i = 0; i < t.shells; i++) shell(B, (i / (t.shells - 1) - 0.5) * (w - 0.4) + (rnd() - 0.5) * 0.1, 0.745, (rnd() - 0.5) * (d - 0.35), 0.1 + rnd() * 0.12, rnd() * 360, 70 + rnd() * 40, cs[i % 3]);
+      const cs = [c('shellA'), c('shellB'), c('shellC')]; for (let i = 0; i < t.shells; i++) mixShell(B, (i / (t.shells - 1) - 0.5) * (w - 0.4) + (rnd() - 0.5) * 0.1, 0.745, (rnd() - 0.5) * (d - 0.35), 0.1 + rnd() * 0.12);
       B.pop(); }
     // plants
     for (const p of E.plants) plant(B, p.pos[0], p.pos[1], p.kind, p.s);
@@ -351,10 +401,48 @@
     for (const p of [[11, 2.5], [12.6, -2.1]]) plant(B, p[0], p[1], 'palm', 1.2);
 
     // ---- track lights over exhibits (visible fixtures)
-    B.zone = 0; for (const l of C.lights) if (l.type === 'spot' && l.zone === 'hall') { B.cyl(l.pos[0], H - 0.5, l.pos[2], 0.1, 0.1, 0.3, 10, { bottom: true, mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); B.cyl(l.pos[0], H - 0.52, l.pos[2], 0.085, 0.085, 0.02, 10, { bottom: true, mat: M.emis, col: [1, 0.85, 0.6], ao: false }); B.box(l.pos[0], H - 0.2, l.pos[2], 0.05, 0.2, 0.05, { mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); }
-    { const d = E.dhow; B.box(d.pos[0], H - 0.16, d.pos[1] - 2.2, d.platform[0], 0.05, 0.1, { mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); }
+    B.zone = 0; for (const l of C.lights) if (l.type === 'spot' && l.zone === 'hall') { const Hc = l.ceil || H; B.cyl(l.pos[0], Hc - 0.5, l.pos[2], 0.1, 0.1, 0.3, 10, { bottom: true, mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); B.cyl(l.pos[0], Hc - 0.52, l.pos[2], 0.085, 0.085, 0.02, 10, { bottom: true, mat: M.emis, col: [1, 0.85, 0.6], ao: false }); B.box(l.pos[0], Hc - 0.2, l.pos[2], 0.05, 0.2, 0.05, { mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); }
+    if (A.void) buildVoid(B, c, hp); else { const d = E.dhow; B.box(d.pos[0], H - 0.16, d.pos[1] - 2.2, d.platform[0], 0.05, 0.1, { mat: M.metal, col: [0.08, 0.08, 0.09], ao: false }); }
 
     return B;
+  }
+  /* ---------- double-height void around the dhow: upper-floor gallery, glass railing, stairs ---------- */
+  function buildVoid(B, c, hp) {
+    const V = A.void, H = A.hallCeiling, H2 = V.h, T = A.wallThickness, zb = hp[6][1], xe = hp[6][0], hz7 = hp[7][1], x0 = V.x0, z0 = V.z0, nb = V.northBack, wb = V.westBack, ex = V.eastBack;
+    const z_ = B.zone; B.zone = 0; const wc = c('hallWall'), white = { mat: M.plain, col: [0.86, 0.87, 0.9], ao: false }, metal = { mat: M.metal, col: [0.7, 0.72, 0.76], ao: false };
+    const wallBox = (cx, cz, w, d) => B.box(cx, H, cz, w, H2 - H, d, { mat: M.plaster, col: wc, ao: false });
+    wallBox((wb + xe) / 2, zb + T / 2, xe - wb, T);                     // south wall (upper part)
+    wallBox(xe + T / 2, (hz7 + zb) / 2, T, zb - hz7);                   // east wall
+    wallBox((ex + xe) / 2, hz7 - T / 2, xe - ex, T); wallBox(ex + T / 2, (nb + hz7) / 2, T, hz7 - nb);   // north-east return
+    wallBox((wb + ex) / 2, nb - T / 2, ex - wb, T);                     // north back wall of the gallery
+    wallBox(wb - T / 2, (nb + zb) / 2, T, zb - nb);                     // west back wall
+    B.poly([[wb, nb], [ex, nb], [ex, hz7], [xe, hz7], [xe, zb], [wb, zb]], H2, { mat: M.plaster, col: c('ceiling'), flip: true });   // upper ceiling
+    // slab edge beams (fascia) around the void
+    B.box((x0 + xe) / 2, H - 0.3, z0, xe - x0, 0.66, 0.2, white); B.box(x0, H - 0.3, (z0 + zb) / 2, 0.2, 0.66, zb - z0, white);
+    // glass railings along the upper-floor edge
+    const yb = H + 0.33, yt = yb + 1.05;
+    const railing = (ax, az, bx, bz) => { const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L / 1.5));
+      for (let i = 0; i < n; i++) { const f0 = i / n, f1 = (i + 1) / n, p0 = [ax + (bx - ax) * f0, az + (bz - az) * f0], p1 = [ax + (bx - ax) * f1, az + (bz - az) * f1];
+        B.pass('blend'); B.quad([[p0[0], yb + 0.08, p0[1]], [p1[0], yb + 0.08, p1[1]], [p1[0], yt, p1[1]], [p0[0], yt, p0[1]]], [bz - az, 0, -(bx - ax)].map(v => v / L), [[0, 0], [1, 0], [1, 1], [0, 1]], { mat: M.glass, col: [0.7, 0.88, 0.98], ao: false }); B.pass('opq');
+        B.box(p0[0], yb, p0[1], 0.07, yt - yb, 0.07, metal); }
+      B.box(bx, yb, bz, 0.07, yt - yb, 0.07, metal); B.tube([ax, yt, az], [bx, yt, bz], 0.028, metal, 8); B.tube([ax, yb + 0.04, az], [bx, yb + 0.04, bz], 0.02, metal, 6); };
+    railing(x0, z0, 11.1, z0); railing(x0, z0, x0, zb - 0.05);
+    // stairs (the striped rectangle on the plan stands for them): along the east wall, rising north to the gallery
+    const n = 30, rise = (H + 0.3) / n, run = 0.29, xs = 11.7, zs = z0 + n * run, sw = 1.2;
+    for (let i = 0; i < n; i++) B.box(xs, (i + 1) * rise - 0.08, zs - (i + 0.5) * run, sw, 0.08, run + 0.04, { mat: M.wood, col: c('deckWood'), top: shade(c('deckWood'), 1.05), ao: false });
+    const yAt = z => (zs - z) / run * rise;                          // tread level along the flight
+    B.quad([[xs - sw / 2, 0, zs], [xs - sw / 2, yAt(z0) - 0.08, z0], [xs - sw / 2, yAt(z0) + 0.03, z0], [xs - sw / 2, 0.11, zs]], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], Object.assign({}, white));   // stringer
+    B.box(xs, yAt(z0) - 0.08, z0 - 0.02, sw, 0.08, 0.04, { mat: M.wood, col: c('deckWood'), ao: false });
+    B.pass('blend'); B.quad([[xs - sw / 2, yAt(zs) + 0.12, zs], [xs - sw / 2, yAt(z0) + 0.12, z0], [xs - sw / 2, yAt(z0) + 1.0, z0], [xs - sw / 2, yAt(zs) + 1.0, zs]], [-1, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], { mat: M.glass, col: [0.7, 0.88, 0.98], ao: false }); B.pass('opq');
+    B.tube([xs - sw / 2, yAt(zs) + 1.0, zs], [xs - sw / 2, yAt(z0) + 1.0, z0], 0.03, metal, 8);
+    for (let i = 0; i <= n; i += 5) { const z = zs - i * run; B.tube([xs - sw / 2, yAt(z) + 0.05, z], [xs - sw / 2, yAt(z) + 1.0, z], 0.02, metal, 6); }
+    // upper-floor details: coves, ceiling downlights, display screens on the gallery walls
+    const cv = { mat: M.emis, col: COL.cove, ao: false };
+    B.box((wb + ex) / 2, H2 - 0.5, nb + 0.09, ex - wb - 0.3, 0.08, 0.1, cv); B.box(wb + 0.09, H2 - 0.5, (nb + zb) / 2, 0.1, 0.08, zb - nb - 0.3, cv); B.box((wb + xe) / 2, H2 - 0.5, zb - 0.09, xe - wb - 0.3, 0.08, 0.1, cv); B.box(xe - 0.09, H2 - 0.5, (hz7 + zb) / 2, 0.1, 0.08, zb - hz7 - 0.3, cv);
+    for (let x = wb + 1.6; x <= xe - 1; x += 3.2) for (let z = nb + 1.4; z <= zb - 1; z += 3.2) B.cyl(x, H2 - 0.03, z, 0.14, 0.14, 0.03, 12, { bottom: true, mat: M.emis, col: [1, 0.92, 0.8], ao: false });
+    for (const s of (V.screens || [])) addScreen(B, s);
+    for (const x of [-7, -2.2, 2.6, 7.4]) B.box(x, H + 0.6, nb + 0.02, 1.3, 0.04, 0.03, { mat: M.emis, col: [1, 0.75, 0.45], ao: false });
+    B.zone = z_;
   }
   function inPoly(p, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
 
@@ -362,7 +450,7 @@
   function buildCamera() {
     const K = C.camera.keys, n = K.length, T = K.map(k => k.t);
     const X = K.map(k => k.pos[0]), Z = K.map(k => k.pos[1]), R = K.map(k => k.rise || 0), PI = K.map(k => k.pitch || 0);
-    const tang = (arr, i) => { if (i === 0 || i === n - 1) return 0; return (arr[i + 1] - arr[i - 1]) / (T[i + 1] - T[i - 1]); };
+    const tang = (arr, i) => { if (i === 0 || i === n - 1 || K[i].stop) return 0; return (arr[i + 1] - arr[i - 1]) / (T[i + 1] - T[i - 1]); };
     let Hd = K.map((k, i) => { const hd = k.heading; if (typeof hd === 'number') return hd; if (hd && hd.look) return Math.atan2(hd.look[1] - k.pos[1], hd.look[0] - k.pos[0]) / D2R;
       const j = i === 0 ? 1 : i, vx = X[Math.min(n - 1, j + 1)] - X[j - 1], vz = Z[Math.min(n - 1, j + 1)] - Z[j - 1]; return Math.atan2(vz, vx) / D2R; });
     for (let i = 1; i < n; i++) { while (Hd[i] - Hd[i - 1] > 180) Hd[i] -= 360; while (Hd[i] - Hd[i - 1] < -180) Hd[i] += 360; }
@@ -381,7 +469,7 @@ uniform mat4 uVP; out vec3 vP; out vec3 vN; out vec3 vC; out vec2 vUV; out vec2 
 void main(){ vP=aPos; vN=aNor; vC=aCol; vUV=aUV; vMZ=aMZ; gl_Position=uVP*vec4(aPos,1.); }`;
   const FS = `#version 300 es
 precision highp float;
-#define MAXL 40
+#define MAXL 56
 in vec3 vP; in vec3 vN; in vec3 vC; in vec2 vUV; in vec2 vMZ; out vec4 oC;
 uniform vec3 uEye; uniform sampler2D uAtlas, uDome, uAO; uniform vec4 uAOBox; uniform float uTime, uExp, uPass;
 uniform int uNL; uniform vec4 uLPos[MAXL], uLCol[MAXL], uLDir[MAXL], uLPar[MAXL];
@@ -416,6 +504,7 @@ void main(){
   else if(m==18){ alb=pow(texture(uAtlas,uv).rgb,vec3(2.2)); spec=0.25; shin=40.; }
   else if(m==19){ vec2 q=(uv-floor(uv/1.6)*1.6)/1.6*2.-1.; float x=min(abs(abs(q.x)-abs(q.y)),9.); float fr=max(abs(q.x),abs(q.y)); float frame=step(x,0.07)+step(0.93,fr); alb=mix(vec3(0.3,0.45,0.6),vec3(0.05),clamp(frame,0.,1.)); emis=mix(vec3(0.25,0.4,0.6),vec3(0.),clamp(frame,0.,1.))*0.7; spec=0.8; shin=80.; }
   else if(m==20){ spec=0.9; shin=70.; }
+  else if(m==21){ float sm=abs(fract(uv.x*1.2)-0.5); float seam=smoothstep(0.5,0.47,sm); alb*=mix(0.8,1.,seam)*(0.93+0.12*fbm(uv*2.2))*(0.97+0.05*sin(uv.y*55.+fbm(uv*3.)*6.)); emis=alb*vec3(1.,0.82,0.58)*0.16; spec=0.04; shin=8.; }
   else if(m==8){ vec3 acc=vec3(0.); float fres=pow(1.-max(dot(N,V),0.),3.); vec3 env=mix(uAmbH*2.,vec3(0.8,0.9,1.)*0.25,0.5); acc=env*(0.4+fres);
     for(int i=0;i<MAXL;i++){ if(i>=uNL) break; float lz=uLCol[i].w; if(lz>=0.&&int(lz+.5)!=zone) continue; vec3 Lv=uLPos[i].xyz-vP; float d=length(Lv); if(d>uLPos[i].w) continue; vec3 L=Lv/d; float sf=smoothstep(uLDir[i].w,uLPar[i].x,dot(-L,uLDir[i].xyz)); float at=pow(clamp(1.-pow(d/uLPos[i].w,4.),0.,1.),2.)/(1.+d*d*0.25); acc+=uLCol[i].rgb*sf*at*pow(max(dot(N,normalize(L+V)),0.),90.)*3.; }
     oC=vec4(tone(acc*0.8),clamp(0.14+fres*0.6+dot(acc,vec3(0.3))*0.25,0.,0.85)); return; }
@@ -456,19 +545,19 @@ void main(){ float lon=(vUV.x-0.5)*6.2831853, lat=(vUV.y-0.5)*3.1415927; vec3 d=
       const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o) + '\n' + s.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n').slice(0, 4000)); return o; };
       const prog = (v, f) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, v)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, f)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); p.u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const nm = gl.getActiveUniform(p, i).name.replace('[0]', ''); p.u[nm] = gl.getUniformLocation(p, gl.getActiveUniform(p, i).name); } return p; };
       this.pMain = prog(VS, FS); this.pSky = prog(SKY_VS, SKY_FS); this.pEq = prog(EQ_VS, EQ_FS);
-      this.scene = buildScene(); this.cam = buildCamera(); this.lights = this.scene.lights.concat(C.lights.map(l => Object.assign({}, l)));
-      this.lights = C.lights.concat(this.scene.lights).slice(0, 40);
+      this.scene = opts.scene || buildScene(); this.cam = buildCamera(); this.lights = this.scene.lights.concat(C.lights.map(l => Object.assign({}, l)));
+      this.lights = C.lights.concat(this.scene.lights).slice(0, 56);
       this.vao = gl.createVertexArray(); this.bufs = {};
       for (const k of ['opq', 'blend', 'add']) { const arr = new Float32Array(this.scene[k]); this.bufs[k] = { n: arr.length / 13, b: gl.createBuffer() }; gl.bindBuffer(gl.ARRAY_BUFFER, this.bufs[k].b); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW); }
       this.vaos = {}; for (const k of ['opq', 'blend', 'add']) { const v = gl.createVertexArray(); gl.bindVertexArray(v); gl.bindBuffer(gl.ARRAY_BUFFER, this.bufs[k].b); [[3, 0], [3, 3], [3, 6], [2, 9], [2, 11]].forEach(([n, o], i) => { gl.enableVertexAttribArray(i); gl.vertexAttribPointer(i, n, gl.FLOAT, false, 52, o * 4); }); this.vaos[k] = v; }
       gl.bindVertexArray(null);
-      this.makeTextures(); this.cube = null; this.log = opts.log || (() => {});
+      this.lowQ = !!opts.lowQ; this.makeTextures(); this.cube = null; this.log = opts.log || (() => {});
       this.log('scene: ' + this.bufs.opq.n + ' opaque verts, ' + this.bufs.blend.n + ' blend, ' + this.bufs.add.n + ' glow, ' + this.lights.length + ' lights');
     }
     makeTextures() {
       const gl = this.gl, nC = C.contents.length, cols = 4, rows = Math.ceil(nC / cols); this.cw = 640; this.ch = 360;
       this.atlasCv = document.createElement('canvas'); this.atlasCv.width = cols * this.cw; this.atlasCv.height = rows * this.ch; this.atlasCtx = this.atlasCv.getContext('2d');
-      this.domeCv = document.createElement('canvas'); this.domeCv.width = this.domeCv.height = 1024; this.domeCtx = this.domeCv.getContext('2d');
+      this.domeCv = document.createElement('canvas'); this.domeCv.width = this.domeCv.height = this.lowQ ? 512 : 1024; this.domeCtx = this.domeCv.getContext('2d');
       const tex = () => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         const an = gl.getExtension('EXT_texture_filter_anisotropic'); if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, 8); return t; };
       this.tAtlas = tex(); this.tDome = tex(); this.tAO = tex();
@@ -483,17 +572,19 @@ void main(){ float lon=(vUV.x-0.5)*6.2831853, lat=(vUV.y-0.5)*3.1415927; vec3 d=
       draw(0.55, 0.55, f => true); draw(0.12, 0.35, f => true);
       const gl2 = gl; gl2.bindTexture(gl2.TEXTURE_2D, this.tAO); gl2.pixelStorei(gl2.UNPACK_FLIP_Y_WEBGL, false); gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, cv); gl2.generateMipmap(gl2.TEXTURE_2D);
     }
+    setLowQ(v) { this.lowQ = !!v; this.domeCv.width = this.domeCv.height = v ? 512 : 1024; this._n = 0; }
     updateContent(t) {
+      if (this.lowQ && this.staticDone && (this._n = (this._n || 0) + 1) % 3 !== 1) return;   // low quality: refresh screens at 1/3 rate
       const gl = this.gl, ctx = this.atlasCtx, cols = 4;
       C.contents.forEach((c, i) => { if (c.static && this.staticDone) return; const x = (i % cols) * this.cw, y = Math.floor(i / cols) * this.ch; ctx.save(); ctx.beginPath(); ctx.rect(x, y, this.cw, this.ch); ctx.clip(); ctx.translate(x, y);
         (c.draw || CONTENT.types[c.type])(ctx, this.cw, this.ch, t, c.p || {}); ctx.restore(); }); this.staticDone = true;
-      const dc = this.domeCtx; dc.save(); (C.dome.draw || CONTENT.types[C.dome.type])(dc, 1024, 1024, t, C.dome.p || {}); dc.restore();
+      const dc = this.domeCtx; dc.save(); const DS = this.domeCv.width; (C.dome.draw || CONTENT.types[C.dome.type])(dc, DS, DS, t, C.dome.p || {}); dc.restore();
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.bindTexture(gl.TEXTURE_2D, this.tAtlas); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.atlasCv); gl.generateMipmap(gl.TEXTURE_2D);
       gl.bindTexture(gl.TEXTURE_2D, this.tDome); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.domeCv); gl.generateMipmap(gl.TEXTURE_2D);
     }
     setLights(t) {
-      const gl = this.gl, p = this.pMain, n = this.lights.length, pos = new Float32Array(160), col = new Float32Array(160), dir = new Float32Array(160), par = new Float32Array(160);
+      const gl = this.gl, p = this.pMain, n = this.lights.length, pos = new Float32Array(224), col = new Float32Array(224), dir = new Float32Array(224), par = new Float32Array(224);
       this.lights.forEach((l, i) => { const zid = l.zone === 'all' ? -1 : ZONES[l.zone]; let k = l.intensity * (l.pulse ? 0.8 + 0.25 * Math.sin(t * 0.7) : 1);
         pos.set([l.pos[0], l.pos[1], l.pos[2], l.range], i * 4); col.set([l.color[0] * k, l.color[1] * k, l.color[2] * k, zid], i * 4);
         if (l.type === 'spot') { const d = norm(sub(l.target, l.pos)), co = Math.cos(l.cone / 2 * D2R), ci = Math.cos(l.cone / 2 * 0.55 * D2R); dir.set([d[0], d[1], d[2], co], i * 4); par.set([ci, 0, 0, 0], i * 4); } else { dir.set([0, -1, 0, -2], i * 4); par.set([-1.5, 0, 0, 0], i * 4); } });
@@ -552,5 +643,5 @@ void main(){ float lon=(vUV.x-0.5)*6.2831853, lat=(vUV.y-0.5)*3.1415927; vec3 d=
       this.drawWorld(vp, eye, { r, u, f }, Math.tan(fovy / 2) * w / h, Math.tan(fovy / 2), t);
     }
   }
-  window.Museum = { Renderer, hex };
+  window.Museum = { Renderer, hex, buildCamera, buildScene };
 })();
