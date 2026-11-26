@@ -11,7 +11,7 @@
 <div id="app"><span>You are viewing this inside an app's built-in browser. If it is slow or the gyroscope does not work, open it in Chrome / Safari (menu &#8942; or share &rarr; "Open in browser").</span><button id="cp">Copy link</button><button id="ax">&#10005;</button></div>
 <div id="toast"></div>
 <div id="load"><h1>Maritime Museum</h1><div class="bar"><i id="lb"></i></div><p id="lt">Loading...</p></div>
-<div id="err"><h2>This 360 viewer needs WebGL 2</h2><p id="em">Your browser or device could not start WebGL 2. Please try an up-to-date Chrome, Edge, Firefox or Safari (iOS 15+), turn on hardware acceleration, or open the link on another device.</p><pre id="ed"></pre></div>
+<div id="err"><h2>This 360 viewer needs WebGL 2</h2><p id="em">Your browser or device could not start WebGL 2. Please try an up-to-date Chrome, Edge, Firefox or Safari (iOS 15+), turn on hardware acceleration (Chrome: Settings &rarr; System &rarr; &quot;Use graphics acceleration when available&quot;, then restart the browser), or open the link on another device.</p><button onclick="location.reload()">Reload</button><pre id="ed"></pre></div>
 <div id="bar"><button id="pl">Pause</button><button id="gy" style="display:none">Gyro: off</button><button id="qb">Quality: auto</button><input id="sl" type="range" min="0" max="90" step="0.01" value="0"><span id="tt">0.0 s</span>
 <label>speed <select id="sp"><option>0.5</option><option selected>1</option><option>2</option></select></label><label><input type="checkbox" id="fl" checked> follow tour view direction</label></div>
 <script src="config.js"></script><script src="content.js"></script><script src="engine.js"></script>
@@ -33,7 +33,9 @@ setTimeout(() => $('hint').style.opacity = 0, 9000);
   let R, V = CONFIG.video;
   try {
     stage(8, 'Checking your browser...'); await tick();
-    if (!document.createElement('canvas').getContext('webgl2')) return fail();
+    if (!document.createElement('canvas').getContext('webgl2')) { let d = 'WebGL 2: not available'; try { const g = document.createElement('canvas').getContext('webgl'); d += '
+WebGL 1: ' + (g ? 'available (hardware acceleration may be off or the GPU is blocked)' : 'not available either'); } catch (e) {} return fail(null, d + '
+' + ua); }
     stage(25, 'Building the museum...'); await tick();
     const scene = Museum.buildScene();
     stage(65, 'Compiling shaders and textures...'); await tick();
