@@ -33,9 +33,7 @@ setTimeout(() => $('hint').style.opacity = 0, 9000);
   let R, V = CONFIG.video;
   try {
     stage(8, 'Checking your browser...'); await tick();
-    if (!document.createElement('canvas').getContext('webgl2')) { let d = 'WebGL 2: not available'; try { const g = document.createElement('canvas').getContext('webgl'); d += '
-WebGL 1: ' + (g ? 'available (hardware acceleration may be off or the GPU is blocked)' : 'not available either'); } catch (e) {} return fail(null, d + '
-' + ua); }
+    if (!document.createElement('canvas').getContext('webgl2')) { let d = 'WebGL 2: not available'; try { const g = document.createElement('canvas').getContext('webgl'); d += ' | WebGL 1: ' + (g ? 'available (hardware acceleration may be off or the GPU is blocked)' : 'not available either'); } catch (e) {} return fail(null, d + ' | ' + ua); }
     stage(25, 'Building the museum...'); await tick();
     const scene = Museum.buildScene();
     stage(65, 'Compiling shaders and textures...'); await tick();
