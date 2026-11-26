@@ -33,12 +33,13 @@ setTimeout(() => $('hint').style.opacity = 0, 9000);
   let R, V = CONFIG.video;
   try {
     stage(8, 'Checking your browser...'); await tick();
-    if (!document.createElement('canvas').getContext('webgl2')) { let d = 'WebGL 2: not available'; try { const g = document.createElement('canvas').getContext('webgl'); d += ' | WebGL 1: ' + (g ? 'available (hardware acceleration may be off or the GPU is blocked)' : 'not available either'); } catch (e) {} return fail(null, d + ' | ' + ua); }
     stage(25, 'Building the museum...'); await tick();
     const scene = Museum.buildScene();
     stage(65, 'Compiling shaders and textures...'); await tick();
     R = new Museum.Renderer($('c'), { antialias: !lowQ, lowQ, scene });
-  } catch (e) { return fail('Something went wrong while starting the 3D view. Try reloading, or use another browser.', String(e && e.message || e).slice(0, 600)); }
+  } catch (e) { const m = String(e && e.message || e);
+    if (/WebGL 2 not available/.test(m)) { let d = 'WebGL 2: not available'; try { d += ' | WebGL 1: ' + (document.createElement('canvas').getContext('webgl') ? 'available (hardware acceleration may be off or the GPU is blocked)' : 'not available either'); } catch (x) {} return fail(null, d + ' | ' + ua); }
+    return fail('Something went wrong while starting the 3D view. Try reloading, or use another browser.', m.slice(0, 600) + ' | ' + ua); }
   stage(100, 'Ready'); $('load').style.opacity = 0; setTimeout(() => $('load').style.display = 'none', 700);
   R.canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); fail('The graphics context was lost (the device ran out of graphics memory). Please reload the page.'); });
 

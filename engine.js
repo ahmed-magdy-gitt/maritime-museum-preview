@@ -540,8 +540,9 @@ void main(){ float lon=(vUV.x-0.5)*6.2831853, lat=(vUV.y-0.5)*3.1415927; vec3 d=
 
   class Renderer {
     constructor(canvas, opts) {
-      opts = opts || {}; const gl = this.gl = canvas.getContext('webgl2', { antialias: opts.antialias !== false, preserveDrawingBuffer: !!opts.preserve, alpha: false, powerPreference: 'high-performance' });
-      if (!gl) throw new Error('WebGL2 not available'); this.canvas = canvas;
+      opts = opts || {}; let gl = null;   // try the preferred attributes first, then progressively plainer ones (some drivers refuse powerPreference / MSAA)
+      for (const a of [{ antialias: opts.antialias !== false, powerPreference: 'high-performance' }, { antialias: false, powerPreference: 'default' }, { antialias: false, powerPreference: 'low-power' }]) { gl = canvas.getContext('webgl2', Object.assign({ preserveDrawingBuffer: !!opts.preserve, alpha: false }, a)); if (gl) break; }
+      this.gl = gl; if (!gl) throw new Error('WebGL2 not available'); this.canvas = canvas;
       const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o) + '\n' + s.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n').slice(0, 4000)); return o; };
       const prog = (v, f) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, v)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, f)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); p.u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); for (let i = 0; i < n; i++) { const nm = gl.getActiveUniform(p, i).name.replace('[0]', ''); p.u[nm] = gl.getUniformLocation(p, gl.getActiveUniform(p, i).name); } return p; };
       this.pMain = prog(VS, FS); this.pSky = prog(SKY_VS, SKY_FS); this.pEq = prog(EQ_VS, EQ_FS);
