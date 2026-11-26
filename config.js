@@ -32,6 +32,8 @@
       fadeIn: 1.2, fadeOut: 3.5,        // seconds of fade from/to black
       exposure: 1.1,
       outName: 'museum_360_preview',    // written to out/<name>.webm
+      // PRO quality level (python tools/render.py pro): physically-based shading, shadows, AO, reflections, bloom, 2x2 supersampling
+      pro: { width: 3072, height: 1536, cube: 1280, tiles: 4, shadow: 1536, nap: 3, frameNap: 50, jpegQ: 0.93, bitrateMbps: 22, shareMbps: 6.5, exposure: 0.75, bloom: 0.1, outName: 'museum_360_pro' },   // GPU-safe: 16 small tiles per cube face, pauses between tiles/frames
     },
 
     /* ---------------- ARCHITECTURE ---------------- */
@@ -133,21 +135,21 @@
     ambient: { hall: [0.14, 0.16, 0.22], dome: [0.17, 0.22, 0.34], out: [0.50, 0.58, 0.72] },
     lights: [
       // warm spots on the big dhow hull + sail, hung from the 12 m ceiling of the void (ceil = fixture height)
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.6, 11.5, 14.6], target: [-3.4, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [-0.4, 11.5, 14.6], target: [-0.2, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [3.0, 11.5, 14.6],  target: [3.2, 1.1, 17.1],  color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [0.2, 11.5, 20.6],  target: [0.2, 1.1, 17.3],  color: [1.0, 0.75, 0.45], intensity: 9, range: 18, cone: 44 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.0, 11.5, 13.9], target: [-1.2, 6.4, 17.5], color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [2.6, 11.5, 13.9],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [-3.0, 11.5, 21.2], target: [-1.2, 6.4, 17.5], color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
-      { type: 'spot', zone: 'hall', ceil: 12, pos: [2.6, 11.5, 21.2],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, pos: [-3.6, 11.5, 14.6], target: [-3.4, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, pos: [-0.4, 11.5, 14.6], target: [-0.2, 1.1, 17.1], color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, pos: [3.0, 11.5, 14.6],  target: [3.2, 1.1, 17.1],  color: [1.0, 0.7, 0.38], intensity: 12, range: 18, cone: 36 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, pos: [0.2, 11.5, 20.6],  target: [0.2, 1.1, 17.3],  color: [1.0, 0.75, 0.45], intensity: 9, range: 18, cone: 44 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, shaft: true, pos: [-3.0, 11.5, 13.9], target: [-1.2, 6.4, 17.5], color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, shaft: true, pos: [2.6, 11.5, 13.9],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.8, 0.52], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, shaft: true, pos: [-3.0, 11.5, 21.2], target: [-1.2, 6.4, 17.5], color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
+      { type: 'spot', zone: 'hall', ceil: 12, shadow: true, shaft: true, pos: [2.6, 11.5, 21.2],  target: [1.6, 6.0, 17.5],  color: [1.0, 0.78, 0.5], intensity: 24, range: 20, cone: 34 },
       // upper-gallery wash
       { type: 'point', zone: 'hall', pos: [0, 10.8, 12.0], color: [1.0, 0.82, 0.6], intensity: 8, range: 12 },
       { type: 'point', zone: 'hall', pos: [-9.5, 9.0, 18.0], color: [1.0, 0.82, 0.6], intensity: 6, range: 11 },
       // canoe niche, medallion platform, plinth, plain fill
-      { type: 'spot', zone: 'hall', pos: [-9.2, 5.7, 13.0], target: [-11.3, 0.4, 13.0], color: [1.0, 0.72, 0.42], intensity: 6.0, range: 10, cone: 50 },
-      { type: 'spot', zone: 'hall', pos: [-12.2, 5.7, 19.4], target: [-14.8, 0.2, 19.6], color: [1.0, 0.78, 0.5], intensity: 6.0, range: 10, cone: 50 },
-      { type: 'spot', zone: 'hall', pos: [-6.0, 5.7, 11.6], target: [-6.0, 1.0, 11.2], color: [0.9, 0.95, 1.0], intensity: 4.0, range: 9, cone: 50 },
+      { type: 'spot', zone: 'hall', shadow: true, pos: [-9.2, 5.7, 13.0], target: [-11.3, 0.4, 13.0], color: [1.0, 0.72, 0.42], intensity: 6.0, range: 10, cone: 50 },
+      { type: 'spot', zone: 'hall', shadow: true, pos: [-12.2, 5.7, 19.4], target: [-14.8, 0.2, 19.6], color: [1.0, 0.78, 0.5], intensity: 6.0, range: 10, cone: 50 },
+      { type: 'spot', zone: 'hall', shadow: true, pos: [-6.0, 5.7, 11.6], target: [-6.0, 1.0, 11.2], color: [0.9, 0.95, 1.0], intensity: 4.0, range: 9, cone: 50 },
       // cool general hall light + curved wall wash
       { type: 'point', zone: 'hall', pos: [-8, 5.2, 7], color: [0.6, 0.78, 1.0], intensity: 3.0, range: 16 },
       { type: 'point', zone: 'hall', pos: [4, 5.2, 9], color: [0.6, 0.78, 1.0], intensity: 3.0, range: 16 },
@@ -224,24 +226,24 @@
         { t: 20.0, pos: [-1.6, 14.3], heading: { look: [0.2,17.45] }, pitch: 12 },   // N1
         { t: 23.6, pos: [2.2, 14.3], heading: { look: [0.2,17.45] }, pitch: 12 },   // N2
         { t: 26.3, pos: [5, 14.5], heading: { look: [0.2,17.45] }, pitch: 12 },   // N3
-        { t: 28.7, pos: [7.2, 15.9], heading: { look: [0.2,17.45] }, pitch: 12 },   // NE
-        { t: 30.8, pos: [7.9, 17.9], heading: { look: [0.2,17.45] }, pitch: 12 },   // E1
-        { t: 32.9, pos: [7, 20], heading: { look: [0.2,17.45] }, pitch: 12 },   // SE
-        { t: 35.9, pos: [4, 20.95], heading: { look: [0.2,17.45] }, pitch: 14 },   // S1
-        { t: 39.5, pos: [1, 20.95], heading: -90, pitch: 22, stop: true },   // S2
+        { t: 28.8, pos: [7.6, 14.6], heading: { look: [0.2,17.45] }, pitch: 12 },   // NE
+        { t: 31.6, pos: [8.5, 17.4], heading: { look: [0.2,17.45] }, pitch: 12 },   // E1
+        { t: 34.5, pos: [7, 20], heading: { look: [0.2,17.45] }, pitch: 12 },   // SE
+        { t: 37.5, pos: [4, 20.95], heading: { look: [0.2,17.45] }, pitch: 14 },   // S1
+        { t: 41.1, pos: [1, 20.95], heading: -90, pitch: 22, stop: true },   // S2
         { t: 44.5, pos: [1, 20.95], heading: -90, pitch: 26, stop: true },   // S2b
         { t: 48.5, pos: [-2.4, 20.95], heading: { look: [0.2,17.45] }, pitch: 14 },   // S3
-        { t: 52.0, pos: [-6, 20.7], heading: 180, pitch: 6 },   // SWb
+        { t: 52.0, pos: [-6, 20.7], heading: 230, pitch: 6 },   // SWb
         { t: 56.3, pos: [-10.3, 19.3], heading: { look: [-14.7,19.6] }, pitch: 4 },   // M1
         { t: 57.4, pos: [-10.3, 18.7], heading: { look: [-14.7,19.6] }, pitch: 4, stop: true },   // M2
         { t: 59.4, pos: [-10.3, 18.7], heading: { look: [-15.5,21] }, pitch: 4, stop: true },   // M2b
-        { t: 63.1, pos: [-8, 17.4], heading: -100, pitch: 0 },   // T1
+        { t: 63.1, pos: [-8, 17.4], heading: -160, pitch: 0 },   // T1
         { t: 65.2, pos: [-7.5, 15.3], heading: { look: [-11.3,13.1] }, pitch: 0 },   // T2
         { t: 67.4, pos: [-8.2, 13.6], heading: { look: [-11.3,13.1] }, pitch: 0, stop: true },   // C1
         { t: 69.9, pos: [-8.2, 13.6], heading: { look: [-11.6,12.4] }, pitch: 0, stop: true },   // C1b
-        { t: 73.0, pos: [-6, 14.3], heading: -20, pitch: 0 },   // X1
-        { t: 75.7, pos: [-3.2, 14.4], heading: -10, pitch: 0 },   // X2
-        { t: 78.4, pos: [-0.8, 12.9], heading: -40, pitch: 0 },   // X3
+        { t: 73.0, pos: [-6, 14.3], heading: 235, pitch: 0 },   // X1
+        { t: 75.7, pos: [-3.2, 14.4], heading: 262, pitch: 0 },   // X2
+        { t: 78.4, pos: [-0.8, 12.9], heading: 270, pitch: 0 },   // X3
         { t: 80.6, pos: [-0.45, 10.6], heading: -90, pitch: 0 },   // X4
         { t: 82.5, pos: [-0.45, 8.6], heading: -90, pitch: 0 },   // D0
         { t: 84.2, pos: [-0.4, 6.8], heading: -90, pitch: 0 },   // D1
