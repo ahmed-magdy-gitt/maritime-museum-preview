@@ -1,0 +1,72 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Maritime Museum - pro quality 360 video</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden;font:13px system-ui,sans-serif;color:#fff}canvas{width:100vw;height:100vh;display:block;cursor:grab;touch-action:none}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:8px 12px calc(8px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:linear-gradient(transparent,#000b);transition:opacity .4s}
+#bar input[type=range]{flex:1;min-width:140px}button,label.b{background:#1d4a6b;color:#fff;border:0;border-radius:4px;padding:6px 11px;cursor:pointer;font:inherit}
+#msg{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#05121c;text-align:center;padding:24px}#msg p{max-width:520px;margin:0;line-height:1.5;opacity:.9}
+#hint{position:fixed;top:8px;left:12px;right:12px;opacity:.7;pointer-events:none;transition:opacity 1s}</style>
+<canvas id="c"></canvas><div id="hint">Drag = look around - wheel / pinch = zoom - Space = play/pause - F = full screen</div>
+<div id="msg" style="display:flex"><h2>Maritime Museum - 360 video</h2><p id="mt">Loading the video...</p><button id="go" style="display:none">Tap to play</button><a id="alt" class="b" style="display:none;color:#fff;text-decoration:none" href="tour_pro.webm">Open the plain video</a><a class="b" style="color:#fff;text-decoration:none" href="./">Live 3D viewer</a></div>
+<div id="bar"><button id="pp">Pause</button><input id="sk" type="range" min="0" max="1000" value="0"><span id="tm">0:00</span><button id="gy" style="display:none">Gyro: off</button><button id="mu">Sound: off</button><a class="b" style="color:#fff;text-decoration:none" href="./">Live viewer</a><button id="fs">Full screen</button></div>
+<script>
+/* Offline 360 (equirectangular) video player: plain WebGL2, no libraries, no network.
+   Plays tour_pro.webm from the same origin (GitHub Pages). */
+const $ = id => document.getElementById(id), cv = $('c'), gl = cv.getContext('webgl2'), VIDEO = 'tour_pro.webm';
+const vid = document.createElement('video'); vid.muted = true; vid.loop = true; vid.playsInline = true; vid.preload = 'auto';
+const show = t => { $('msg').style.display = 'flex'; $('mt').textContent = t; };
+if (!gl) { show('360 look-around needs WebGL 2 (an up-to-date Chrome / Edge / Firefox / Safari). You can still watch the flat video.'); setTimeout(() => { $('alt').style.display = ''; }, 0); }
+let yaw = 0, pitch = 0, fov = 80, tex, ok = false, tainted = false;
+const VS = `#version 300 es
+out vec2 q; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); q=p*2.-1.; gl_Position=vec4(q,0.,1.); }`;
+const FS = `#version 300 es
+precision highp float; in vec2 q; out vec4 o; uniform sampler2D T; uniform vec2 tn; uniform vec3 R, U, F;
+void main(){ vec3 d=normalize(F+R*q.x*tn.x+U*q.y*tn.y); float lon=atan(d.x,-d.z), lat=asin(clamp(d.y,-1.,1.)); o=vec4(texture(T,vec2(lon/6.2831853+0.5,0.5-lat/3.14159265)).rgb,1.); }`;
+let prog, loc = {};
+if (gl) {
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+  prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+  for (const n of ['T', 'tn', 'R', 'U', 'F']) loc[n] = gl.getUniformLocation(prog, n);
+  tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+}
+function size() { const d = Math.min(devicePixelRatio, 2); cv.width = Math.round(innerWidth * d); cv.height = Math.round(innerHeight * d); } addEventListener('resize', size); size();
+vid.onerror = () => { show('This browser could not play the video (WebM/VP9 needed: Chrome, Edge, Firefox, Android, recent Safari/iPhone). Try another browser, or open the plain video.'); $('alt').style.display = ''; };
+vid.oncanplay = () => { ok = true; if ($('mt').textContent.startsWith('Loading')) $('msg').style.display = 'none'; };
+const tryPlay = () => vid.play().then(() => { $('msg').style.display = 'none'; $('go').style.display = 'none'; }).catch(() => { if (vid.error) return; show('Tap to start the 360 video.'); $('go').style.display = ''; });
+$('go').onclick = tryPlay; $('mu').onclick = () => { vid.muted = !vid.muted; $('mu').textContent = 'Sound: ' + (vid.muted ? 'off' : 'on'); };
+vid.src = VIDEO; tryPlay(); setTimeout(() => { if (!ok && $('msg').style.display === 'flex' && $('mt').textContent.startsWith('Loading')) $('mt').textContent = 'Loading the video (about 57 MB)... please wait'; }, 3000);
+$('pp').onclick = () => { if (vid.paused) { vid.play(); $('pp').textContent = 'Pause'; } else { vid.pause(); $('pp').textContent = 'Play'; } };
+$('fs').onclick = () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); };
+$('sk').oninput = () => { if (vid.duration) vid.currentTime = $('sk').value / 1000 * vid.duration; };
+addEventListener('keydown', e => { if (e.key === ' ') { $('pp').click(); e.preventDefault(); } if (e.key.toLowerCase() === 'f') $('fs').click(); });
+let drag = null, pinch = 0;
+cv.onmousedown = e => { drag = [e.clientX, e.clientY]; cv.style.cursor = 'grabbing'; }; addEventListener('mouseup', () => { drag = null; cv.style.cursor = 'grab'; });
+addEventListener('mousemove', e => { if (!drag) return; const k = fov / innerHeight; yaw -= (e.clientX - drag[0]) * k; pitch = Math.max(-89, Math.min(89, pitch + (e.clientY - drag[1]) * k)); drag = [e.clientX, e.clientY]; });
+cv.addEventListener('wheel', e => { fov = Math.max(30, Math.min(110, fov + e.deltaY * 0.05)); e.preventDefault(); }, { passive: false });
+cv.ontouchstart = e => { $('hint').style.opacity = 0; drag = [e.touches[0].clientX, e.touches[0].clientY]; if (e.touches.length > 1) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); };
+cv.ontouchmove = e => { e.preventDefault(); if (e.touches.length > 1) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); fov = Math.max(30, Math.min(110, fov - (d - pinch) * 0.15)); pinch = d; return; }
+  const x = e.touches[0].clientX, y = e.touches[0].clientY, k = fov / innerHeight; yaw -= (x - drag[0]) * k; pitch = Math.max(-89, Math.min(89, pitch + (y - drag[1]) * k)); drag = [x, y]; };
+// gyroscope (phones; https or localhost; iOS asks permission)
+let gyro = null, gOff = null; const gy = $('gy');
+if ('DeviceOrientationEvent' in window && /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent)) gy.style.display = '';
+function onOri(e) { if (e.alpha == null) return; const r = Math.PI / 180, a = e.alpha * r, b = e.beta * r, g = e.gamma * r, cA = Math.cos(a), sA = Math.sin(a), cB = Math.cos(b), sB = Math.sin(b), cG = Math.cos(g), sG = Math.sin(g);
+  const fE = -(cA * sG + sA * sB * cG), fN = -(sA * sG - cA * sB * cG), fU = -(cB * cG); gyro = { yaw: Math.atan2(fE, fN) / r, pitch: Math.asin(Math.max(-1, Math.min(1, fU))) / r }; }
+gy.onclick = async () => { if (gy.dataset.on) { gy.dataset.on = ''; gyro = null; gOff = null; removeEventListener('deviceorientation', onOri); gy.textContent = 'Gyro: off'; return; }
+  try { if (DeviceOrientationEvent.requestPermission && (await DeviceOrientationEvent.requestPermission()) !== 'granted') return; } catch (e) { return; }
+  addEventListener('deviceorientation', onOri); gy.dataset.on = '1'; gy.textContent = 'Gyro: on'; gOff = null; };
+setTimeout(() => $('hint').style.opacity = 0, 8000);
+const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+function frame() {
+  requestAnimationFrame(frame); if (!gl) return;
+  if (vid.duration && !drag) { $('sk').value = vid.currentTime / vid.duration * 1000; } $('tm').textContent = fmt(vid.currentTime || 0) + ' / ' + fmt(vid.duration || 0);
+  if (vid.readyState >= 2 && !tainted) {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid); }
+    catch (e) { tainted = true; vid.pause(); show('This browser blocked 360 rendering of the video. Open the plain video instead.'); $('alt').style.display = ''; }
+  }
+  let yw = yaw, pt = pitch; if (gyro) { if (gOff === null) gOff = yaw - gyro.yaw; yw = gOff + gyro.yaw; pt = gyro.pitch; }
+  const r = Math.PI / 180, y = yw * r, p = pt * r, f = [Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p)], R = [Math.cos(y), 0, Math.sin(y)], U = [-Math.sin(y) * Math.sin(p), Math.cos(p), Math.cos(y) * Math.sin(p)], th = Math.tan(fov * r / 2);
+  gl.viewport(0, 0, cv.width, cv.height); gl.useProgram(prog); gl.uniform3fv(loc.R, R); gl.uniform3fv(loc.U, U); gl.uniform3fv(loc.F, f); gl.uniform2f(loc.tn, th * cv.width / cv.height, th); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc.T, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+requestAnimationFrame(frame);
+</script>
